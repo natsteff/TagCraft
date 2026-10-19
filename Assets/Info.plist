@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>TagCraft Music Librarian</string>
+	<key>CFBundleExecutable</key>
+	<string>TagCraft Music Librarian</string>
+	<key>CFBundleIconFile</key>
+	<string>TagCraftBrand.icns</string>
+	<key>CFBundleIconName</key>
+	<string>TagCraftBrand</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.tagcraft.musiclibrarian</string>
+	<key>CFBundleName</key>
+	<string>TagCraft Music Librarian</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.6.0</string>
+	<key>CFBundleVersion</key>
+	<string>54</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>TagCraftReleaseChannel</key>
+	<string>Alpha</string>
+</dict>
+</plist>
