@@ -9,3 +9,8 @@ Describe current behavior, distinguish proposed work, and retain material unreso
 
 ## Version release gate
 Before packaging or delivering any app build, run `python3 Checks/release-check.py`; after packaging run it again with the app bundle path. Splash, top-right toolbar label and About must use AppRelease shared bundle metadata. Build numbers are per release version: start at Build 1 when the version changes, then increment for subsequent builds of that version. Keep current README release metadata accurate. Screenshot captions retain their actual capture build.
+
+## Screenshot publication question and recommendation
+Before each GitHub publication, also ask whether Nate wants the README screenshots refreshed. Bundle this with the README-review question where practical, but allow separate answers. Screenshot refresh is opt-in; wait for the answer and do not automatically refresh images.
+
+Include a concrete recommendation with the question: give the last capture date and app version/build, summarize visible changes since that capture, identify affected screenshots, and recommend refresh or reuse with a short reason. Consult `docs/SCREENSHOTS.md`, source history and current UI; age alone is not a reason to refresh. If the baseline or changes are uncertain, say so rather than inventing them. After capturing screenshots, update that record and preserve accurate capture-version captions.
