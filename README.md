@@ -14,7 +14,7 @@ Use **Clean** to normalize filename spacing, punctuation, capitalization, and un
 
 **Library Statistics and Health** scans your **entire primary music library**, independently of the current working folder. Explore collection-wide track counts, storage totals, and artist, genre, and year summaries. Find missing or suspicious tags, naming variations, inconsistent album artists, and other issues, then review selected corrections. Local SQLite caching lets subsequent scans reuse unchanged file records.
 
-Requires **macOS 14 or later**. Processing and analysis run locally; no online metadata lookup is required. Current alpha: **0.6.0 Alpha, build 54**.
+Requires **macOS 14 or later**. Processing and analysis run locally; no online metadata lookup is required. Current alpha: **0.6.0 Alpha, build 1**.
 
 ## Development disclaimer
 

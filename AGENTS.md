@@ -8,4 +8,4 @@ Wait for his answer before proceeding with publication. Do not infer consent fro
 Describe current behavior, distinguish proposed work, and retain material unresolved safety limitations. Do not present passing regression checks as proof that writes to original libraries are safe.
 
 ## Version release gate
-Before packaging or delivering any app build, run `python3 Checks/release-check.py`; after packaging run it again with the app bundle path. Splash, top-right toolbar label and About must use AppRelease shared bundle metadata. Increment the build number for a new app build, and keep current README release metadata accurate. Screenshot captions retain their actual capture build.
+Before packaging or delivering any app build, run `python3 Checks/release-check.py`; after packaging run it again with the app bundle path. Splash, top-right toolbar label and About must use AppRelease shared bundle metadata. Build numbers are per release version: start at Build 1 when the version changes, then increment for subsequent builds of that version. Keep current README release metadata accurate. Screenshot captions retain their actual capture build.
