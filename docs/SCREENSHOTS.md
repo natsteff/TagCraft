@@ -1,6 +1,6 @@
 # Screenshot capture record
 
-Latest workspace refresh: October 22, 2026 (America/Chicago), 0.7.0 Alpha Build 1. Nate supplied workspace.png from the prepared sample workspace. The narrow window places some toolbar actions under More and hides the top-right version label. No file changes or playback were applied.
+Latest workspace refresh: October 22, 2026 (America/Chicago), 0.7.0 Alpha Build 1. Nate supplied workspace.png from the prepared sample workspace. The replacement wider capture shows all toolbar actions; the version label remains outside this layout. No file changes or playback were applied.
 
 Other screenshots last captured: October 19, 2026 (America/Chicago).
 App shown: 0.5.2 Alpha, Build 52.

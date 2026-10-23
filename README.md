@@ -92,7 +92,7 @@ The script builds a release executable into `outputs/TagCraft Music Librarian.ap
 
 ## Screenshots
 
-Actual app captures using fictional artists and original sample artwork. Workspace: **0.7.0 Alpha, build 1**, October 22, 2026. Library Statistics: **0.5.2 Alpha, build 52**, October 19, 2026.
+Actual app captures using fictional artists and original sample artwork. Workspace: **0.7.0 Alpha, build 1**, October 22, 2026. Library Statistics and Health: **0.5.2 Alpha, build 52**, October 19, 2026.
 
 ### Workspace
 
@@ -105,6 +105,12 @@ The workspace combines a sortable file list, tag inspector, embedded artwork, an
 Statistics cover the separate primary library, with cached records and artist, genre, year and Health views.
 
 ![Library Statistics showing totals and artist groups for the fictional demo collection](docs/images/library-statistics.jpg)
+
+### Library Health
+
+Select a Health row to review only that issue type.
+
+![Library Health listing missing album, artwork and track values, naming variations and a suspicious year](docs/images/library-health.jpg)
 
 [More screenshots: Magic, Health corrections, library structure and move previews](screenshots.md)
 

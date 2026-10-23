@@ -4,19 +4,13 @@
 
 Actual captures of **0.5.2 Alpha, build 52**, using fictional artists and original sample artwork. The sample workspace contains eight files; the separate demo library contains 24 tracks. No changes were applied from preview or correction dialogs. The library-structure example is an unsaved draft, discarded after capture.
 
-The [README](README.md#screenshots) shows the workspace and primary-library statistics. Additional views are below.
+The [README](README.md#screenshots) shows the workspace, primary-library statistics and Library Health. Additional views are below.
 
 ## Magic — review suggestions
 
 Ambiguous interpretations remain excluded until reviewed. Suggested tags and filename changes are shown together.
 
 ![Magic review showing proposed artist and title values, filename cleanup and uncertainty warnings](docs/images/magic-review.jpg)
-
-## Library Health
-
-Select a Health row to review only that issue type.
-
-![Library Health listing missing album, artwork and track values, naming variations and a suspicious year](docs/images/library-health.jpg)
 
 ## Health corrections
 
