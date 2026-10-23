@@ -92,13 +92,13 @@ The script builds a release executable into `outputs/TagCraft Music Librarian.ap
 
 ## Screenshots
 
-Actual captures of **0.5.2 Alpha, build 52**, using fictional artists and original sample artwork.
+Actual app captures using fictional artists and original sample artwork. Workspace: **0.7.0 Alpha, build 1**, October 22, 2026. Library Statistics: **0.5.2 Alpha, build 52**, October 19, 2026.
 
 ### Workspace
 
 The workspace combines a sortable file list, tag inspector, embedded artwork, and integrated music player.
 
-![TagCraft workspace with fictional tracks, album artwork, tag inspector and paused music player](docs/images/workspace.jpg)
+![TagCraft workspace with fictional tracks, album artwork, tag inspector and integrated music player](docs/images/workspace.png)
 
 ### Primary library statistics
 

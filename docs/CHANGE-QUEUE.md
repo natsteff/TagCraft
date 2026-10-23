@@ -1,8 +1,9 @@
 # Change queue
 
-No unimplemented feature changes are queued.
+No unimplemented changes are queued.
 
-## Current authorized publication
+## Completed October 22, 2026
 
-- Implemented: AGPL-3.0 version 3 only and License & Usage Notice, offline documents, acknowledgment migration and tests.
-- In progress: refresh affected workspace screenshot, then push all current source changes. README review declined; affected screenshot refresh approved October 22, 2026.
+- AGPL-3.0 version 3 only and License & Usage Notice; offline documents, acknowledgment migration and tests.
+- Updated workspace screenshot supplied by Nate; other captures retain their original versions.
+- README review declined; affected screenshot refresh approved for the authorized GitHub push.
