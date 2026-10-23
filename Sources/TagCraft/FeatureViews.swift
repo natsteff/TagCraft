@@ -35,7 +35,7 @@ final class FolderMonitor {
 }
 @MainActor extension Model {
     func openFolder(_ url: URL) {
-        guard !busy else { return }
+        guard noticeAcknowledged, !busy else { return }
         if dirty {
             let alert = NSAlert(); alert.messageText = "Discard unsaved inspector edits?"
             alert.informativeText = "Opening another workspace replaces the current selection. Save Tags first if you want to keep these edits."
@@ -71,7 +71,7 @@ final class FolderMonitor {
         }
     }
     func runPlans(_ plans: [FilePlan], label: String) {
-        guard !busy, !plans.isEmpty else { return }
+        guard noticeAcknowledged, !busy, !plans.isEmpty else { return }
         busy = true; showMoves = false; cancellation = JobCancellation()
         progressDone = 0; progressTotal = plans.count; progressText = label
         failures = []; lastErrors = []
@@ -286,25 +286,34 @@ struct CleanSettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Clean Rules").font(.title2.bold())
             Text("Rules are saved automatically. Clean prepares raw filenames in their existing field order and never reads or changes tags. Magic combines Clean, extraction and rename in a reviewed plan.").foregroundStyle(.secondary)
+                .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: 24) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Normalize whitespace", isOn: $m.cleanRules.whitespace)
-                    Toggle("Replace underscores with spaces", isOn: $m.cleanRules.underscores)
-                    Toggle("Clean separator dots", isOn: $m.cleanRules.dots)
-                    Toggle("Intelligent capitalization", isOn: $m.cleanRules.capitalization)
-                    Toggle("Normalize delimiters to ‘ - ’", isOn: Binding(get: { m.cleanRules.normalizeSeparators ?? true }, set: { m.cleanRules.normalizeSeparators = $0 }))
-                    Toggle("Remove track-number prefixes", isOn: $m.cleanRules.removeTrackPrefix)
-                    Toggle("Remove configured trailing labels", isOn: $m.cleanRules.removeSuffixes)
-                    Text("Initials and decimal numbers are protected. Filename-forbidden characters still become underscores. Add artist names or acronyms below to preserve their spelling.").font(.caption).foregroundStyle(.secondary)
-                }.frame(width: 300)
+                VStack(alignment: .leading, spacing: 8) {
+                    rule("Normalize whitespace, remove repeated spaces", example: #""  " → " ""#, value: $m.cleanRules.whitespace)
+                    rule("Replace underscores with spaces", example: #""_" → " ""#, value: $m.cleanRules.underscores)
+                    rule("Replace separator dots with spaces", example: #""." → " ""#, value: $m.cleanRules.dots)
+                    rule("Apply title case", example: #""song title" → "Song Title""#, value: $m.cleanRules.capitalization)
+                    rule("Normalize hyphens and dashes", example: "Hyphen, en dash or em dash → spaced hyphen", value: Binding(get: { m.cleanRules.normalizeSeparators ?? true }, set: { m.cleanRules.normalizeSeparators = $0 }))
+                    rule("Remove configured trailing labels", example: #""Title [Official Audio]" → "Title""#, value: $m.cleanRules.removeSuffixes)
+                    Text("Initials, decimal numbers and spelling exceptions are protected. Hyphens, en dashes and em dashes become a hyphen with one space on each side. Filename-forbidden characters become underscores.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(width: 330)
                 VStack(alignment: .leading) {
                     Text("Spelling exceptions — one per line").font(.headline)
                     TextEditor(text: $m.cleanRules.exceptions).font(.body.monospaced()).frame(height: 120).border(.quaternary)
                     Text("Removable trailing labels — one per line").font(.headline)
                     TextEditor(text: $m.cleanRules.suffixes).font(.body.monospaced()).frame(height: 100).border(.quaternary)
-                    Text("Labels are removed only at the end, after a dash or inside brackets. Live, Remix and Acoustic are not in the default removal list.").font(.caption).foregroundStyle(.secondary)
+                    Text("Labels are removed only at the end, after a dash or inside brackets. Live, Remix and Acoustic are not in the default removal list.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            Text("Keep track numbers until you have extracted them with Get Tags from Filename. To omit them from final filenames, choose a Rename from Tags layout without Track.")
+                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
             Text("Examples from selected files").font(.headline)
             List(m.selected.prefix(5)) { track in
                 VStack(alignment: .leading) {
@@ -313,8 +322,18 @@ struct CleanSettingsView: View {
                 }
             }
             HStack { Button("Restore Defaults") { m.cleanRules = CleanRules() }; Spacer(); Button("Done") { dismiss() }.buttonStyle(.borderedProminent) }
-        }.padding(24).frame(width: 790, height: 650)
+        }.padding(24).frame(width: 850, height: 730)
     }
+    private func rule(_ title: String, example: String, value: Binding<Bool>) -> some View {
+        Toggle(isOn: value) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+                Text(example).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
 }
 struct WorkflowView: View {
     @EnvironmentObject var m: Model

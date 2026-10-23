@@ -1,10 +1,14 @@
 #!/bin/zsh
 set -eu
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+python3 "$project_dir/scripts/generate-terms.py" --check
 python3 "$project_dir/Checks/release-check.py"
 check_dir="$(mktemp -d "${TMPDIR:-/tmp}/tagcraft-check.XXXXXX")"
 trap 'rm -rf "$check_dir"' EXIT
-swiftc "$project_dir/Sources/TagCraft/Tags.swift" \
+swiftc "$project_dir/Sources/TagCraft/LicenseTerms.swift" \
+  "$project_dir/Sources/TagCraft/LicenseAcceptance.swift" \
+  "$project_dir/Sources/TagCraft/Updates.swift" \
+  "$project_dir/Sources/TagCraft/Tags.swift" \
   "$project_dir/Sources/TagCraft/Features.swift" \
   "$project_dir/Sources/TagCraft/Magic.swift" \
   "$project_dir/Sources/TagCraft/ReviewTools.swift" \

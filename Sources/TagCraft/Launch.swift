@@ -19,7 +19,7 @@ import AppKit
         panel.contentView = NSHostingView(rootView:
             VStack(spacing: 18) {
                 StatisticsBrandLogo(width: 320).frame(width: 320, height: 230)
-                Text(AppRelease.shortLabel).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(AppRelease.fullLabel).font(.system(size: 12)).foregroundStyle(.secondary)
                 ProgressView().controlSize(.small)
             }.frame(width: 420, height: 340)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 20))

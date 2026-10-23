@@ -14,7 +14,15 @@ Use **Clean** to normalize filename spacing, punctuation, capitalization, and un
 
 **Library Statistics and Health** scans your **entire primary music library**, independently of the current working folder. Explore collection-wide track counts, storage totals, and artist, genre, and year summaries. Find missing or suspicious tags, naming variations, inconsistent album artists, and other issues, then review selected corrections. Local SQLite caching lets subsequent scans reuse unchanged file records.
 
-Requires **macOS 14 or later**. Processing and analysis run locally; no online metadata lookup is required. Current alpha: **0.6.0 Alpha, build 1**.
+Requires **macOS 14 or later**. Processing and analysis run locally; no online metadata lookup is required. Current alpha: **0.7.0 Alpha, build 1**.
+
+## License & Usage Notice
+
+TagCraft is free, open-source software under the complete [GNU Affero General Public License, version 3 only](LICENSE). Its standard warranty and liability provisions apply. There is no separate restrictive EULA or custom monetary liability cap. Third-party license notices and obligations remain applicable.
+
+Read the [License & Usage Notice](USAGE-NOTICE.md) for TagCraft’s operations, backups and recovery limitations. The same notice and full license are available offline through **License & Usage Notice…** in the app menu and Settings.
+
+**Continue** records acknowledgment locally for the notice identity and app version/build. **Quit** closes the app without recording acknowledgment. New builds or notice changes show it again; old EULA acceptance is not reused. This notice adds no contract or licensing restrictions. AGPL section 9 does not require acceptance merely to receive or run the program. Acknowledgment does not fix known alpha write-safety defects.
 
 ## Development disclaimer
 
@@ -28,12 +36,23 @@ TagCraft was developed using **OpenAI Codex**, with human direction and review. 
 
 ### Installation
 
-1. Download the TagCraft `.dmg` from the release page.
-2. Open it and drag **TagCraft Music Librarian** into **Applications**.
-3. Eject the disk image, then open TagCraft from Applications.
-4. The preview is not notarized. If macOS blocks it, follow [Apple’s instructions for opening an app from an unidentified developer](https://support.apple.com/en-us/102445), including **System Settings → Privacy & Security → Open Anyway**, when available.
+1. Download the TagCraft `.dmg` from the release page and double-click it.
+2. In the Finder window that opens, drag **TagCraft Music Librarian** onto the **Applications shortcut in that same window**. Wait for the copy to finish. Use that shortcut—not the Dock’s Apps launcher.
+3. Eject the TagCraft disk image from Finder.
+4. In Finder, choose **Go → Applications** and open **TagCraft Music Librarian**.
+5. The preview is not notarized. If macOS blocks it, follow [Apple’s instructions for opening an app from an unidentified developer](https://support.apple.com/en-us/102445), including **System Settings → Privacy & Security → Open Anyway**, when available.
 
-To update, quit TagCraft and replace the app in Applications with the newer copy. Settings and the statistics database are stored separately from the application.
+### Updating an existing installation
+
+1. Quit TagCraft using **TagCraft Music Librarian → Quit TagCraft Music Librarian** or **Command-Q**. Closing its window alone may leave it running.
+2. Download the newer release’s `.dmg` and double-click it.
+3. Drag **TagCraft Music Librarian** onto the **Applications shortcut in that same disk-image window**, just as for the first installation.
+4. When Finder says an item with that name already exists, choose **Replace**. Authenticate if macOS asks, and wait for the copy to finish. If Finder says the app is in use, cancel the copy, quit TagCraft, then retry.
+5. Eject the disk image. In Finder, choose **Go → Applications** and open **TagCraft Music Librarian**. Use **Settings → About TagCraft…** to confirm the new version and build.
+
+Your settings and statistics database are stored separately from the app and are retained when replacing it. Do not delete those data files or uninstall the app’s data to update. The new download remains subject to the macOS opening checks described above.
+
+For local development builds, the `.app` inside the project’s `outputs` folder is already unpacked. It can be copied into `/Applications` using Finder; the `.dmg` is the packaged download intended for installation.
 
 ## Preview status and known limitations
 
@@ -63,13 +82,13 @@ Other limitations:
 
 ## Run and build
 
-Open **TagCraft Music Librarian.app** beside this source folder if using the locally packaged build. To build from source, use a macOS Swift toolchain compatible with Swift tools 5.9 or later and the macOS 14 SDK or later:
+Open **outputs/TagCraft Music Librarian.app** inside this project folder if using the locally packaged build. To build from source, use a macOS Swift toolchain compatible with Swift tools 5.9 or later and the macOS 14 SDK or later:
 
 ```sh
 ./build-app.sh
 ```
 
-The script builds a release executable, packages the icon and logo, and applies a local ad-hoc signature. SQLite uses the system library; no database server is required. The bundle identifier is `local.tagcraft.musiclibrarian`.
+The script builds a release executable into `outputs/TagCraft Music Librarian.app`, packages the icon and logo, and applies a local ad-hoc signature. Local outputs are excluded from Git. SQLite uses the system library; no database server is required. The bundle identifier is `local.tagcraft.musiclibrarian`.
 
 ## Screenshots
 
@@ -109,7 +128,7 @@ Embedded artwork is visible in the inspector and batch editor. **Artwork & Detai
 
 ## Filename tools and Magic
 
-- **Clean** prepares raw filenames using configurable punctuation, spacing, capitalization, spelling exceptions, and removable labels. It does not read or change tags or reorder fields.
+- **Clean** preserves track-number prefixes for later extraction; omit Track from a Rename from Tags layout to remove it from final filenames. Clean prepares raw filenames using configurable punctuation, spacing, capitalization, spelling exceptions, and removable labels. It does not read or change tags or reorder fields.
 - **Get Tags from Filename** extracts fields with a preset or custom mask such as `{Artist} - {Title}`. Only fields named in the mask are replaced. `{Skip}` matches content without saving it. The extension is excluded. Masks and separators are literal; optional delimiter handling supports nested brackets. Yellow warnings remain eligible for Apply and need review.
 - **Rename from Tags** creates filenames from saved tags with presets or a custom mask. It preserves tag capitalization and adds `.mp3`. Missing values and detected filename conflicts are skipped. Files remain in their folders.
 - **Magic** combines Clean rules, filename interpretation, existing tags, library artist names, batch evidence, and conservative folder context into editable suggestions. Review artist, title, album, track, disc, alternative interpretations, and the proposed filename before applying. Uncertain files initially remain excluded; unchanged files are excluded as **No change needed**. Magic does not move files or purge tags.
@@ -157,6 +176,12 @@ Health findings include missing fields/artwork, invalid track/disc values, suspi
 **Artist naming variations** compares names already present in the library after ignoring case, accents, punctuation, and spacing. Clean Rules spelling exceptions take precedence when choosing preferred spelling—for example, `DJ` over `Dj`, even when `Dj` is more frequent. Otherwise frequency, then alphabetical order, breaks ties. This is a local consistency suggestion, not verification of an artist's official name. Findings require multiple variants; an isolated spelling is not flagged by this rule. Update Library Statistics after changing exceptions or upgrading from an older report to refresh these suggestions; cached file records can still be reused. Workspace quality checks use the current rules immediately.
 
 CSV exports cover totals, the current view, inventory, health findings, and duplicate reports. Export does not initiate a scan. Duplicate checks compare compressed-audio payloads while ignoring tags; they do not identify different encodings of the same recording.
+
+## Check for updates
+
+**Settings → Check for Updates…** (also in the application menu) manually checks GitHub Releases. Alpha/beta installations include prereleases. Versions are compared before per-version build numbers, with stable releases preferred over prereleases of the same version. Release notes supply build numbers using `Build N`; missing numbers are disclosed rather than treated as verified same-build matches.
+
+The dialog distinguishes failures from up-to-date results and links to release notes and a matching architecture/universal macOS DMG when a newer release is available. Downloads open in the browser; quit TagCraft and replace it in Applications yourself. There is no background check or automatic installation, and no music information is sent to GitHub.
 
 ## Local storage
 

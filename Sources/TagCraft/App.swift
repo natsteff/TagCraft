@@ -46,6 +46,8 @@ struct MoveItem: Identifiable {
     var detail: String? = nil
 }
 @MainActor final class Model: ObservableObject {
+    @Published var noticeAcknowledged = LicenseAcceptance.isAcknowledged(defaults: AppPreferences.defaults, release: AppRelease.noticeRelease)
+    @Published var showReadTerms = false
     @Published var tracks: [Track] = []
     @Published var selection = Set<URL>()
     @Published var folder: URL?
@@ -57,6 +59,7 @@ struct MoveItem: Identifiable {
     @Published var baseline = Tags()
     @Published var message = ""
     @Published var moves: [MoveItem] = []
+    @Published var showUpdateCheck = false
     @Published var showAbout = false
     @Published var showLibraryStructure = false
     @Published var movePlacement = LibraryPlacement.settings
@@ -183,7 +186,7 @@ struct MoveItem: Identifiable {
     private var restoredMusicFolder = false
     var dirty: Bool { draft != baseline }
     func restoreMusicFolder() {
-        guard !restoredMusicFolder else { return }
+        guard noticeAcknowledged, !restoredMusicFolder else { return }
         restoredMusicFolder = true
         let session: WorkspaceSession? = SettingsFiles.load("workspace-session.json")
         guard folder == nil, let path = AppPreferences.defaults.string(forKey: "lastMusicFolder") ?? session?.workspace else { return }
@@ -197,7 +200,7 @@ struct MoveItem: Identifiable {
         playback.queue = { [weak self] in self?.filtered.map(PlaybackTrack.init) ?? [] }
     }
     func pick(library isLibrary: Bool = false) {
-        guard !busy else { return }
+        guard noticeAcknowledged, !busy else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.message = isLibrary ? "Choose your organized music library" : "Open a TagCraft workspace folder containing files to edit"
         panel.prompt = isLibrary ? "Choose Library" : "Open Workspace"
@@ -225,7 +228,7 @@ struct MoveItem: Identifiable {
         else { openFolder(url) }
     }
     func scan() {
-        guard !busy, let folder else { return }
+        guard noticeAcknowledged, !busy, let folder else { return }
         var directory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &directory), directory.boolValue,
               FileManager.default.isReadableFile(atPath: folder.path) else {
@@ -469,13 +472,15 @@ struct MoveItem: Identifiable {
     @StateObject private var model = Model()
     var body: some Scene {
         WindowGroup("TagCraft Music Librarian") {
-            ContentView().environmentObject(model).frame(minWidth: 1050, minHeight: 620)
+            LicenseGateRoot().environmentObject(model).frame(minWidth: 1050, minHeight: 620)
                 .background(LaunchWindowGate())
         }.windowStyle(.hiddenTitleBar)
-        Settings { LibraryStructureView().environmentObject(model) }
+        Settings { LicenseGateRoot(settings: true).environmentObject(model) }
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("About TagCraft…") { model.showAbout = true }
+                Button("About TagCraft…") { model.showAbout = true }.disabled(!model.noticeAcknowledged)
+                Button("Check for Updates…") { model.showUpdateCheck = true }.disabled(!model.noticeAcknowledged)
+                Button("License & Usage Notice…") { model.showReadTerms = true }.disabled(!model.noticeAcknowledged)
             }
         }
     }
@@ -817,6 +822,8 @@ struct ContentView: View {
         .sheet(isPresented: $m.showWorkflow) { WorkflowView().environmentObject(m) }
         .sheet(isPresented: $m.showStatistics) { StatisticsView().environmentObject(m) }
         .sheet(isPresented: $m.showTechnical) { TechnicalView().environmentObject(m) }
+        .sheet(isPresented: $m.showReadTerms) { LicenseTermsView(required: false, accept: {}, close: { m.showReadTerms = false }, decline: {}) }
+        .sheet(isPresented: $m.showUpdateCheck) { UpdateCheckView() }
         .sheet(isPresented: $m.showAbout) { AboutTagCraftView() }
         .sheet(isPresented: $m.showLibraryStructure) { LibraryStructureView().environmentObject(m) }
         .sheet(isPresented: $m.showPurgeSettings) { PurgeSettingsView().environmentObject(m) }
@@ -971,12 +978,12 @@ struct ContentView: View {
             } label: { Label("Open Workspace", systemImage: "folder") }
         case 2: Button { m.scan() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.disabled(m.folder == nil)
         case 5: Button { m.undoMove() } label: { Label("Undo File Action", systemImage: "arrow.uturn.backward") }.disabled(m.undoMoves.isEmpty)
-        case 6: Button { m.beginBatch() } label: { Label("Edit Selected Tags", systemImage: "square.stack.3d.up") }.disabled(m.selection.isEmpty || m.dirty)
+        case 6: Button { m.beginBatch() } label: { Label { Text("Edit Selected Tags") } icon: { EditSelectedTagsIcon() } }.disabled(m.selection.isEmpty || m.dirty)
         case 7: Button { m.previewClean() } label: { Label { Text("Clean") } icon: { BroomIcon() } }.disabled(m.selection.isEmpty || m.dirty)
         case 8: Button { m.beginMagic() } label: { Label("Magic", systemImage: "wand.and.stars") }.disabled(m.selection.isEmpty || m.dirty)
         case 9: Button { m.previewPurge() } label: { Label("Purge", systemImage: "eraser") }.disabled(m.selection.isEmpty || m.dirty)
-        case 10: Button { m.previewRename() } label: { Label("Rename from Tags", systemImage: "pencil.line") }.disabled(m.selection.isEmpty || m.dirty)
-        case 11: Button { m.previewExtract() } label: { Label("Get Tags from Filename", systemImage: "text.badge.plus") }.disabled(m.selection.isEmpty || m.dirty)
+        case 10: Button { m.previewRename() } label: { Label { Text("Rename from Tags") } icon: { RenameFromTagsIcon() } }.disabled(m.selection.isEmpty || m.dirty)
+        case 11: Button { m.previewExtract() } label: { Label { Text("Get Tags from Filename") } icon: { FilenameToTagsIcon() } }.disabled(m.selection.isEmpty || m.dirty)
         case 12:
             Button { m.prepareMovePreview() } label: { Label("Move to Library", systemImage: "tray.and.arrow.down") }.disabled(m.selection.isEmpty || m.dirty)
         case 13: Button { m.showWorkflow = true } label: { Label("Workflow", systemImage: "list.bullet.clipboard") }
@@ -992,6 +999,8 @@ struct ContentView: View {
                 Toggle("Automatic Refresh", isOn: $m.autoRefresh).onChange(of: m.autoRefresh) { _, _ in m.configureMonitor() }
                 Menu("Action Bar Display") { actionBarDisplayPicker }
                 Divider()
+                Button("Check for Updates…") { m.showUpdateCheck = true }
+                Button("License & Usage Notice…") { m.showReadTerms = true }
                 Button("About TagCraft…") { m.showAbout = true }
             } label: { Label("Settings", systemImage: "gearshape") }
         }
@@ -1017,7 +1026,7 @@ struct ContentView: View {
             .padding(.horizontal, 8).padding(.vertical, 10)
     }
     var barHints: [String] {
-        ["Library tools\n" + (m.library?.path ?? "No library selected"), "Open a workspace or recent workspace", "Refresh workspace", "Play selected track", "Stop playback", "Undo last file action", "Edit selected tags", "Prepare raw filenames; does not read or change tags", "Clean, extract tags and rename in one reviewed plan", "Purge configured tags", "Build filenames from saved tags", "Extract tags from filenames", "Move to library\n" + (m.library?.path ?? "No library selected"), "Preparation workflows", "Filter tracks", "Settings"]
+        ["Library tools\n" + (m.library?.path ?? "No library selected"), "Open a workspace or recent workspace", "Refresh workspace", "Play selected track", "Stop playback", "Undo last file action", "Edit selected tags", "Prepare raw filenames; does not read or change tags", "Intelligently cleans filenames, extracts tags and renames files in one reviewed plan", "Purge configured tags", "Build filenames from saved tags", "Extract tags from filenames", "Move to library\n" + (m.library?.path ?? "No library selected"), "Preparation workflows", "Filter tracks", "Settings"]
     }
     var actionBar: some View {
         VStack(spacing: 0) {
@@ -1027,7 +1036,7 @@ struct ContentView: View {
                     Spacer(minLength: 0)
                     VStack(spacing: 0) {
                         BrandWaveform().frame(width: 120, height: 48)
-                        Text(AppRelease.shortLabel).font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text(AppRelease.fullLabel).font(.system(size: 10)).foregroundStyle(.secondary)
                     }.fixedSize().padding(.trailing, 16)
                 }
                 fittedBar(actionOrder.count); fittedBar(12); fittedBar(10)
@@ -1230,6 +1239,8 @@ enum AppRelease {
     static var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—" }
     static var channel: String { Bundle.main.object(forInfoDictionaryKey: "TagCraftReleaseChannel") as? String ?? "Alpha" }
     static var shortLabel: String { version + " " + channel }
+    static var noticeRelease: String { version + ":" + build }
+    static var fullLabel: String { shortLabel + " (Build " + build + ")" }
     static let website = URL(string: "https://github.com/natsteff/TagCraft")!
 }
 struct AboutTagCraftView: View {
@@ -1238,7 +1249,7 @@ struct AboutTagCraftView: View {
         VStack(spacing: 18) {
             StatisticsBrandLogo(width: 220)
             Text("TagCraft Music Librarian").font(.title2.bold())
-            Text("Version " + AppRelease.shortLabel + " (Build " + AppRelease.build + ")")
+            Text("Version " + AppRelease.fullLabel)
                 .textSelection(.enabled)
             Text("Alpha software. Test edits and moves on copies of your music files.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)

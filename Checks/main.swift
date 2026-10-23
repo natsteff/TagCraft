@@ -178,7 +178,7 @@ rules.removeSuffixes = true
 check(try rules.clean("artist - song (Official Video).mp3", tags: Tags()).0 == "Artist - Song.mp3")
 check(try rules.clean("artist - song (Acoustic).mp3", tags: Tags()).0 == "Artist - Song (Acoustic).mp3")
 rules.removeTrackPrefix = true
-check(try rules.clean("03 - artist - song.mp3", tags: Tags()).0 == "Artist - Song.mp3")
+check(try rules.clean("03 - artist - song.mp3", tags: Tags()).0 == "03 - Artist - Song.mp3")
 rules.capitalization = false
 check(try rules.clean("abba - SONG.mp3", tags: Tags()).0 == "abba - SONG.mp3")
 check(LibraryTools.suggestions("Metalica", names: ["Metallica", "Muse"]) == ["Metallica"])
@@ -531,3 +531,85 @@ try FileManager.default.createSymbolicLink(at: plainLibrary.appendingPathCompone
 check(FileJobs.run([FilePlan(source: linkSource, destination: originallySafe)], cancellation: JobCancellation()) { _,_,_ in }.first?.error != nil)
 check(try Data(contentsOf: linkSource) == audio)
 print("Symbolic-link regression checks passed: preview refusal, apply-time recheck, linked/dangling files, directory traversal and unchanged external targets.")
+
+check(UpdateVersion("0.6.1-alpha", build: 1)! > UpdateVersion("0.6.0-alpha", build: 99)!)
+check(UpdateVersion("v0.6.0-alpha", build: 2)! > UpdateVersion("0.6.0-alpha", build: 1)!)
+check(UpdateVersion("0.6.0")! > UpdateVersion("0.6.0-beta", build: 100)!)
+check(UpdateVersion("0.6.0-beta")! > UpdateVersion("0.6.0-alpha", build: 100)!)
+check(UpdateVersion("") == nil && UpdateVersion("0..1") == nil && UpdateVersion("0.6.0-unknown") == nil)
+func updateFixture(_ tag: String, build: Int = 1, draft: Bool = false, prerelease: Bool = true, architecture: String = "arm64", host: String = "github.com") throws -> GitHubUpdateRelease {
+    let object: [String: Any] = ["tag_name": tag, "name": "TagCraft " + tag, "body": "Version (Build \(build))", "draft": draft, "prerelease": prerelease,
+        "html_url": "https://\(host)/natsteff/TagCraft/releases/tag/\(tag)",
+        "assets": [["name": "TagCraft-macOS-\(architecture).dmg", "state": "uploaded", "browser_download_url": "https://\(host)/natsteff/TagCraft/releases/download/\(tag)/TagCraft-macOS-\(architecture).dmg"]]]
+    return try JSONDecoder().decode(GitHubUpdateRelease.self, from: JSONSerialization.data(withJSONObject: object))
+}
+let alphaUpdate = try updateFixture("v0.6.1-alpha", build: 2)
+let stableUpdate = try updateFixture("v0.6.0", prerelease: false)
+let draftUpdate = try updateFixture("v9.0.0-alpha", draft: true)
+let foreignUpdate = try updateFixture("v8.0.0-alpha", host: "example.com")
+check(UpdateChecker.newest([stableUpdate, alphaUpdate, draftUpdate, foreignUpdate], includePrereleases: true)?.tag_name == alphaUpdate.tag_name)
+check(UpdateChecker.newest([stableUpdate, alphaUpdate], includePrereleases: false)?.tag_name == stableUpdate.tag_name)
+check(alphaUpdate.build == 2 && alphaUpdate.download(architecture: "arm64") != nil && alphaUpdate.download(architecture: "x86_64") == nil)
+check(try updateFixture("v0.6.1-alpha", architecture: "universal").download(architecture: "x86_64") != nil)
+check(foreignUpdate.download(architecture: "arm64") == nil)
+
+final class UpdateTestProtocol: URLProtocol {
+    static var status = 200
+    static var responseData = Data()
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        check(request.url?.host == "api.github.com")
+        check(request.value(forHTTPHeaderField: "Authorization") == nil)
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.responseData)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+let updateConfiguration = URLSessionConfiguration.ephemeral
+updateConfiguration.protocolClasses = [UpdateTestProtocol.self]
+let updateSession = URLSession(configuration: updateConfiguration)
+UpdateTestProtocol.responseData = try JSONSerialization.data(withJSONObject: [["tag_name": "v0.6.0-alpha", "name": "TagCraft", "body": "Build 1", "html_url": "https://github.com/natsteff/TagCraft/releases/tag/v0.6.0-alpha", "draft": false, "prerelease": true, "assets": []]])
+check(try await UpdateChecker.check(includePrereleases: true, session: updateSession).build == 1)
+UpdateTestProtocol.status = 403
+check((try? await UpdateChecker.check(includePrereleases: true, session: updateSession)) == nil)
+UpdateTestProtocol.status = 200; UpdateTestProtocol.responseData = Data("invalid JSON".utf8)
+check((try? await UpdateChecker.check(includePrereleases: true, session: updateSession)) == nil)
+updateSession.invalidateAndCancel()
+print("Update checks passed: alpha releases, version/build reset, channels, asset architecture, URL validation, public request, rate limiting and malformed responses.")
+
+var legacyPrefixRules = CleanRules()
+legacyPrefixRules.removeTrackPrefix = true
+let decodedPrefixRules = try JSONDecoder().decode(CleanRules.self, from: JSONEncoder().encode(legacyPrefixRules))
+check(try decodedPrefixRules.clean("07 - artist - song.mp3", tags: Tags()).0 == "07 - Artist - Song.mp3")
+check(try decodedPrefixRules.clean("07 - artist - song.mp3", tags: Tags()).1.allSatisfy { !$0.contains("Remove numbered") })
+print("Clean preserves track prefixes even when legacy saved rules requested removal.")
+
+let termsSuite = "TagCraft-Terms-Test-" + UUID().uuidString
+let termsDefaults = UserDefaults(suiteName: termsSuite)!
+defer { termsDefaults.removePersistentDomain(forName: termsSuite) }
+termsDefaults.set("keep", forKey: "unrelatedSetting")
+termsDefaults.set(LicenseTerms.version, forKey: "acceptedLicenseTermsVersion")
+termsDefaults.set("0.6.0:7", forKey: "acceptedLicenseAppRelease")
+termsDefaults.set(Date(), forKey: "licenseTermsAcceptedAt")
+check(!LicenseAcceptance.isAcknowledged(defaults: termsDefaults, release: "0.6.0:7"))
+check(termsDefaults.object(forKey: "usageNoticeAcknowledgedAt") == nil)
+let acceptedDate = Date(timeIntervalSince1970: 1234567)
+LicenseAcceptance.acknowledge(defaults: termsDefaults, release: "0.6.0:7", at: acceptedDate)
+check(LicenseAcceptance.isAcknowledged(defaults: termsDefaults, release: "0.6.0:7"))
+check(termsDefaults.object(forKey: "usageNoticeAcknowledgedAt") as? Date == acceptedDate)
+check(!LicenseAcceptance.isAcknowledged(defaults: termsDefaults, release: "0.6.0:8"))
+check(!LicenseAcceptance.isAcknowledged(defaults: termsDefaults, release: "0.7.0:1"))
+termsDefaults.set("changed", forKey: "acknowledgedUsageNoticeHash")
+check(!LicenseAcceptance.isAcknowledged(defaults: termsDefaults, release: "0.6.0:7"))
+LicenseAcceptance.acknowledge(defaults: termsDefaults, release: "0.6.0:7")
+termsDefaults.set("old", forKey: "acknowledgedUsageNoticeVersion")
+check(!LicenseAcceptance.isAcknowledged(defaults: termsDefaults, release: "0.6.0:7"))
+LicenseAcceptance.acknowledge(defaults: termsDefaults, release: "0.6.0:7")
+termsDefaults.set("old", forKey: "acknowledgedUsageNoticeSupplementVersion")
+check(!LicenseAcceptance.isAcknowledged(defaults: termsDefaults, release: "0.6.0:7"))
+check(termsDefaults.string(forKey: "unrelatedSetting") == "keep")
+check(LicenseTerms.text.contains("TAGCRAFT MUSIC LIBRARIAN") && !LicenseTerms.text.contains("SHELF ELF LIBRARIAN"))
+print("Notice acknowledgment checks passed: explicit local records, version/build/hash/supplement changes, timestamps and unrelated preference preservation.")

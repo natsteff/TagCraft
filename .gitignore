@@ -5,3 +5,6 @@
 *.dmg
 *.zip
 DerivedData/
+
+# Local app builds, release packages, and review artifacts
+/outputs/

@@ -7,15 +7,13 @@ struct CleanRules: Codable, Equatable {
     var dots = true
     var capitalization = true
     var normalizeSeparators: Bool? = true
+    // Legacy saved setting retained for decoding; Clean no longer removes track prefixes.
     var removeTrackPrefix = false
     var removeSuffixes = false
     var exceptions = "AC/DC\nR.E.M.\nABBA\nblink-182\nP!nk\nDJ\nEP\nUK\nUSA"
     var suffixes = "Official Video\nOfficial Music Video\nOfficial Audio\nLyrics\nLyric Video"
     func clean(_ filename: String, tags: Tags) throws -> (String, [String]) {
-        var inputName = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
-        if removeTrackPrefix {
-            inputName = inputName.replacingOccurrences(of: "^\\s*\\d{1,3}(?:\\s*[-._)]\\s*|\\s+)", with: "", options: .regularExpression)
-        }
+        let inputName = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         var explanations: [String] = []
         let dictionary = exceptions.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
         func replace(_ value: String, _ pattern: String, _ template: String) -> String {
@@ -65,7 +63,6 @@ struct CleanRules: Codable, Equatable {
                 // Keep initials, decimal numbers and ellipses; replace word.separator dots.
                 value = replace(value, "(?<=[\\p{L}\\p{N}])\\.(?=[\\p{L}\\p{N}])", " ")
             }
-            if removeTrackPrefix && title { value = replace(value, "^\\s*\\d{1,3}\\s*[-.)]\\s+", "") }
             if whitespace { value = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
             if capitalization { value = value.capitalized(with: Locale(identifier: "en_US_POSIX")) }
             for (marker, spelling) in protected { value = value.replacingOccurrences(of: marker, with: spelling, options: .caseInsensitive) }
@@ -78,7 +75,6 @@ struct CleanRules: Codable, Equatable {
         if dots { explanations.append("Clean separator dots; preserve configured names, initials and decimals") }
         if whitespace { explanations.append("Normalize spaces") }
         if capitalization { explanations.append("Title case with spelling exceptions") }
-        if removeTrackPrefix { explanations.append("Remove numbered title prefixes") }
         return (result, explanations)
     }
 }

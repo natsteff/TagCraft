@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor extension Model {
     func restoreStatistics() {
-        guard !statisticsRestoreStarted else { return }
+        guard noticeAcknowledged, !statisticsRestoreStarted else { return }
         statisticsRestoreStarted = true; statisticsLoading = true; statisticsError = ""
         let directory = SettingsFiles.directory
         Task {
