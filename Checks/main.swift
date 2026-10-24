@@ -40,7 +40,7 @@ for version in [3,4] {
     cleared.extra.removeValue(forKey: "TCOM")
     check(try ID3(reread.writing(cleared, original: written)).tags == cleared)
 }
-print("All 12 expanded text fields roundtrip and clear correctly in ID3v2.3 and v2.4.")
+print("All additional fields, including Lyrics, roundtrip and clear correctly in ID3v2.3 and v2.4.")
 
 let existing = Tags(album: "Keep Me", genre: "Rock")
 let standard = try FilenameMask(FilenameMask.masks[0]).extract("Artist - Song - Live.mp3", existing: existing)
@@ -613,3 +613,80 @@ check(!LicenseAcceptance.isAcknowledged(defaults: termsDefaults, release: "0.6.0
 check(termsDefaults.string(forKey: "unrelatedSetting") == "keep")
 check(LicenseTerms.text.contains("TAGCRAFT MUSIC LIBRARIAN") && !LicenseTerms.text.contains("SHELF ELF LIBRARIAN"))
 print("Notice acknowledgment checks passed: explicit local records, version/build/hash/supplement changes, timestamps and unrelated preference preservation.")
+
+// Explicit bulk intent: empty/mixed inputs cannot turn unrelated edits into deletion.
+var firstBulk = Tags(title: "First title", artist: "Shared", year: "2000", track: "1")
+var secondBulk = Tags(title: "Second title", artist: "Shared", year: "2000", track: "2")
+firstBulk.extra["USLT"] = "First lyrics\nSecond line"
+secondBulk.extra["USLT"] = "Different lyrics"
+check(MixedTagValues.value("Title", in: [firstBulk, secondBulk]).mixed)
+check(!MixedTagValues.value("Artist", in: [firstBulk, secondBulk]).mixed)
+var bulkDraft = Tags(artist: "Updated", year: "2006")
+let safePatch = TagEditPatch(draft: bulkDraft, checked: ["Title", "Artist", "Year", "Lyrics"], cleared: [])
+let firstChanged = safePatch.applying(to: firstBulk), secondChanged = safePatch.applying(to: secondBulk)
+check(firstChanged.title == "First title" && secondChanged.title == "Second title")
+check(firstChanged.track == "1" && secondChanged.track == "2")
+check(firstChanged.extra["USLT"] == firstBulk.extra["USLT"] && secondChanged.extra["USLT"] == secondBulk.extra["USLT"])
+check(firstChanged.artist == "Updated" && firstChanged.year == "2006")
+let removeTitle = TagEditPatch(draft: bulkDraft, checked: ["Title"], cleared: ["Title"]).applying(to: firstBulk)
+check(removeTitle.title.isEmpty && removeTitle.artist == firstBulk.artist && removeTitle.extra == firstBulk.extra)
+check(TagEditPatch(draft: bulkDraft, checked: [], cleared: ["Title"]).applying(to: firstBulk) == firstBulk)
+for lyricsVersion in [3,4] {
+    let lyricsAudio = Data(repeating: 0x55, count: 4096)
+    var lyricsSeed = try ID3(lyricsAudio); lyricsSeed.version = lyricsVersion
+    let originalLyrics = "\nFirst line — café 🎵\nSecond line\n"
+    var lyricsTags = Tags(title: "Keep title", artist: "Keep artist"); lyricsTags.extra["USLT"] = originalLyrics
+    let lyricsFile = lyricsSeed.writing(lyricsTags, original: lyricsAudio)
+    var lyricsParsed = try ID3(lyricsFile)
+    check(lyricsParsed.tags.extra["USLT"] == originalLyrics)
+    check(lyricsFile.suffix(lyricsAudio.count) == lyricsAudio)
+    let alternate = ID3.Frame(id: "USLT", payload: LyricsFrame(language: "fra", descriptor: "translation", text: "Autre texte").payload(version: lyricsVersion), flags: Data([0,0]))
+    let synchronized = ID3.Frame(id: "SYLT", payload: Data([0,1,2,3,4]), flags: Data([0,0]))
+    lyricsParsed.frames.append(alternate); lyricsParsed.frames.append(synchronized)
+    let multiFile = lyricsParsed.writing(lyricsParsed.tags, original: lyricsFile)
+    let multiParsed = try ID3(multiFile)
+    var unrelatedEdit = multiParsed.tags; unrelatedEdit.year = "2026"
+    let unchangedLyricsFile = multiParsed.writing(unrelatedEdit, original: multiFile)
+    let unchangedLyrics = try ID3(unchangedLyricsFile)
+    check(unchangedLyrics.frames.filter { $0.id == "USLT" }.map(\.payload) == multiParsed.frames.filter { $0.id == "USLT" }.map(\.payload))
+    var editedLyrics = multiParsed.tags; editedLyrics.extra["USLT"] = "Replacement\nMultiline"
+    let editedLyricsFile = multiParsed.writing(editedLyrics, original: multiFile)
+    let editedParsed = try ID3(editedLyricsFile)
+    check(editedParsed.tags.extra["USLT"] == "Replacement\nMultiline")
+    check(editedParsed.frames.last(where: { $0.id == "USLT" })?.payload == alternate.payload)
+    editedLyrics.set("Lyrics", "")
+    let clearedLyricsFile = multiParsed.writing(editedLyrics, original: multiFile)
+    let clearedLyrics = try ID3(clearedLyricsFile)
+    check(!clearedLyrics.frames.contains { $0.id == "USLT" })
+    check(clearedLyrics.frames.first(where: { $0.id == "SYLT" })?.payload == synchronized.payload)
+    check(clearedLyrics.tags.title == "Keep title" && clearedLyrics.tags.artist == "Keep artist")
+    check(clearedLyricsFile.suffix(lyricsAudio.count) == lyricsAudio)
+}
+let latinLyrics = try LyricsFrame.decode(Data([0]) + Data("eng".utf8) + Data([0]) + Data("Latin lyrics\nNext line".utf8))
+check(latinLyrics.language == "eng" && latinLyrics.descriptor.isEmpty && latinLyrics.text == "Latin lyrics\nNext line")
+var rejectedLyrics = false
+do { _ = try LyricsFrame.decode(Data([3,101,110,103,65,66])) } catch { rejectedLyrics = true }
+check(rejectedLyrics)
+print("Bulk edit and Lyrics checks passed: blank/mixed preservation, explicit field clearing, v2.3/v2.4 Unicode multiline lyrics, alternate language/raw-frame preservation and audio invariance.")
+
+// Display settings are independent preferences, never tag mutations.
+let visibilityGroups = TagVisibility.groups(inspector: ["Artist", "Year", "Lyrics"])
+check(visibilityGroups.shown == ["Artist", "Lyrics", "Year"])
+check(Set(visibilityGroups.shown).isDisjoint(with: Set(visibilityGroups.hidden)))
+check(Set(visibilityGroups.shown + visibilityGroups.hidden) == Set(TagEditPatch.fields))
+check(visibilityGroups.hidden == visibilityGroups.hidden.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
+let inversePurge = TagVisibility.inspectorFields(fromPurge: ["Artist", "Year / Recording Date", "Lyrics (plain and synchronized)"])
+check(!inversePurge.contains("Artist") && !inversePurge.contains("Year") && !inversePurge.contains("Lyrics"))
+check(inversePurge.contains("Title") && inversePurge.contains("Lyricist"))
+check(TagVisibility.inspectorFields(fromPurge: []) == Set(TagVisibility.tags))
+check(TagVisibility.inspectorFields(fromPurge: Set(PurgeField.fields.map(\.id))).isEmpty)
+let displaySuite = "TagCraft-Display-Test-" + UUID().uuidString
+let displayDefaults = UserDefaults(suiteName: displaySuite)!
+defer { displayDefaults.removePersistentDomain(forName: displaySuite) }
+check(TagVisibility.load("inspector", defaults: displayDefaults, fallback: Set(TagVisibility.tags), allowed: Set(TagVisibility.tags)) == Set(TagVisibility.tags))
+displayDefaults.set([String](), forKey: "inspector")
+check(TagVisibility.load("inspector", defaults: displayDefaults, fallback: Set(TagVisibility.tags), allowed: Set(TagVisibility.tags)).isEmpty)
+displayDefaults.set(["Lyrics", "Artist", "Unknown"], forKey: "columns")
+check(TagVisibility.load("columns", defaults: displayDefaults, fallback: TagVisibility.defaultColumns, allowed: TagVisibility.columnChoices) == ["Lyrics", "Artist"])
+check(displayDefaults.stringArray(forKey: "inspector") == [])
+print("Display configuration checks passed: complete alphabetic groups, frame-mapped Purge inverse, independent settings and persistent Select None.")

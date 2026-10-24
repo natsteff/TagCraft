@@ -25,7 +25,7 @@ struct LicenseTermsView: View {
                     Button("Continue", action: accept).buttonStyle(.borderedProminent)
                 } else { Button("Done", action: close).keyboardShortcut(.cancelAction) }
             }
-        }.padding(24).frame(width: 780, height: 650)
+        }.padding(24).frame(minWidth: 780, idealWidth: 780, maxWidth: .infinity, minHeight: 480, idealHeight: 650, maxHeight: .infinity).background(ResizableReviewSheet())
             .interactiveDismissDisabled(required)
     }
 }

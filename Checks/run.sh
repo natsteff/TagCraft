@@ -5,7 +5,10 @@ python3 "$project_dir/scripts/generate-terms.py" --check
 python3 "$project_dir/Checks/release-check.py"
 check_dir="$(mktemp -d "${TMPDIR:-/tmp}/tagcraft-check.XXXXXX")"
 trap 'rm -rf "$check_dir"' EXIT
-swiftc "$project_dir/Sources/TagCraft/LicenseTerms.swift" \
+swiftc "$project_dir/Sources/TagCraft/TagVisibility.swift" \
+  "$project_dir/Sources/TagCraft/LyricsFrame.swift" \
+  "$project_dir/Sources/TagCraft/TagEditPatch.swift" \
+  "$project_dir/Sources/TagCraft/LicenseTerms.swift" \
   "$project_dir/Sources/TagCraft/LicenseAcceptance.swift" \
   "$project_dir/Sources/TagCraft/Updates.swift" \
   "$project_dir/Sources/TagCraft/Tags.swift" \

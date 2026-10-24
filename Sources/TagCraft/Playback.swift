@@ -88,13 +88,13 @@ struct MiniPlayer: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Button { playback.adjacent(-1) } label: { Image(systemName: "backward.end.fill") }
-                    .disabled(!playback.canStep(-1)).help("Previous track")
+                    .disabled(!playback.canStep(-1)).help("Previous track").accessibilityLabel("Previous track")
                 Button { playback.toggle(start: m.filtered.first(where: { m.selection.contains($0.url) }).map(PlaybackTrack.init) ?? m.filtered.first.map(PlaybackTrack.init)) } label: {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill").frame(width: 20)
-                }.disabled(playback.current == nil && m.filtered.isEmpty).help(playback.isPlaying ? "Pause" : "Play / resume")
-                Button { playback.stop() } label: { Image(systemName: "stop.fill") }.disabled(playback.current == nil).help("Stop and return to the beginning")
+                }.disabled(playback.current == nil && m.filtered.isEmpty).help(playback.isPlaying ? "Pause" : "Play / resume").accessibilityLabel(playback.isPlaying ? "Pause playback" : "Play or resume")
+                Button { playback.stop() } label: { Image(systemName: "stop.fill") }.disabled(playback.current == nil).help("Stop and return to the beginning").accessibilityLabel("Stop playback")
                 Button { playback.adjacent(1) } label: { Image(systemName: "forward.end.fill") }
-                    .disabled(!playback.canStep(1)).help("Next track")
+                    .disabled(!playback.canStep(1)).help("Next track").accessibilityLabel("Next track")
             }.buttonStyle(.borderless)
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
                 HStack(spacing: 8) {

@@ -53,6 +53,32 @@ import AppKit
 }
 
 @MainActor final class LaunchDelegate: NSObject, NSApplicationDelegate {
+    weak var model: Model?
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model else { return .terminateNow }
+        if model.busy {
+            let alert = NSAlert(); alert.messageText = "Wait for the current operation to finish"
+            alert.informativeText = "Use Cancel in the workspace to stop remaining work, then quit after the current file finishes."
+            alert.runModal(); return .terminateCancel
+        }
+        guard model.dirty else { return .terminateNow }
+        let alert = NSAlert(); alert.messageText = "Save tag changes before quitting?"
+        alert.informativeText = "Your unsaved inspector edits will be lost if you quit without saving."
+        alert.addButton(withTitle: "Save Changes"); alert.addButton(withTitle: "Quit Without Saving"); alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            model.save(onSuccess: { sender.reply(toApplicationShouldTerminate: true) })
+            // A failed or cancelled save must cancel the pending termination.
+            Task { @MainActor in
+                while model.busy { try? await Task.sleep(for: .milliseconds(50)) }
+                if model.dirty { sender.reply(toApplicationShouldTerminate: false) }
+            }
+            return .terminateLater
+        case .alertSecondButtonReturn: return .terminateNow
+        default: return .terminateCancel
+        }
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) { LaunchSplash.shared.present() }
     func applicationDidFinishLaunching(_ notification: Notification) { LaunchSplash.shared.finishAfterDelay() }
 }

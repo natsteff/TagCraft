@@ -1,21 +1,38 @@
 # Screenshot capture record
 
-Latest workspace refresh: October 22, 2026 (America/Chicago), 0.7.0 Alpha Build 1. Nate supplied workspace.png from the prepared sample workspace. The replacement wider capture shows all toolbar actions; the version label remains outside this layout. No file changes or playback were applied.
+## Current captures
 
-Other screenshots last captured: October 19, 2026 (America/Chicago).
-App shown: 0.5.2 Alpha, Build 52.
-Older files: workspace.jpg (superseded in README by workspace.png), magic-review.jpg, library-statistics.jpg, library-health.jpg, health-corrections.jpg, library-structure.jpg, move-preview.jpg, all under docs/images/.
-Content: fictional sample workspace (8 files), demo library (24 tracks), original geometric artwork. Captured from the real app. No changes applied from previews/corrections; structure draft was cancelled.
+Captured October 23, 2026 (America/Chicago) from the actual packaged **0.7.0 Beta (Build 1)** app. Nate explicitly approved both README review/update and screenshot refresh before this GitHub publication, and explicitly approved the Beta transition. Captures were made after Nate acknowledged License & Usage Notice supplement 1.1 himself.
 
-## Changes since capture
+The app opened copies of the original fictional demo under ignored `outputs/screenshot-demo/`: **Sample Workspace (8 MP3s)** and **Demo Music Library (24 MP3s)**. No personal music files or private library content appear. Artwork is the original geometric sample artwork. All 32 copied MP3 hashes still match their source demo files after capture. Playback was not started. No tag edits, purges, corrections, renames or moves were applied. The library-structure draft was canceled; tag-display and column dialogs were canceled. Only demo statistics were scanned.
 
-- 0.6.0 Build 4: approved final toolbar icons are tag + pencil (Edit Selected Tags), arrow around tag (Rename from Tags), and document ↘ tag (Get Tags from Filename). Refresh workspace capture for these icons.
+The original support/statistics store was isolated before launch and restored afterward, along with original preferences and workspace/library locations. The notice acknowledgment Nate made himself was retained; none was manufactured. Local backups, the demo scan store and a capture hash manifest remain under ignored `outputs/screenshot-demo/` and are not publication assets.
 
-- 0.6.0 Build 3: toolbar icons changed for Edit Selected Tags (pencil), Get Tags from Filename (document → tag), and Rename from Tags (name tag with marker); Magic hover description now starts “Intelligently cleans…”. Workspace screenshot refresh is recommended for those visible icons too.
+The workspace capture uses the Columns → Auto Fit Columns action and a wider inspector for legibility. Images are direct native captures, without synthesized UI. macOS may show its purple capture/privacy indicator over the title-bar controls in the workspace capture; that indicator is system UI, not a TagCraft feature.
 
-- 0.5.2 Build 53: version added to splash; library paths removed from Library Tools and Settings menus; Change Library dialog gained current-location display.
-- 0.6.0 Alpha, Build 1: release version changed and in-app GitHub links point to the project. Workspace screenshot still visibly shows 0.5.2 Alpha. Screenshot captions intentionally identify the older capture build.
+Every file below depicts the same Beta release/build; modal captures do not themselves display a version label.
 
-The October 22 refresh replaces the README workspace image. A future wider capture can show all toolbar actions and the current version label. The other six screenshots can be reused if their shown content still matches the current UI; inspect subsequent visible changes before recommending. The changed menus and chooser are not shown in the existing gallery.
+| Image | Pixels | Content |
+| --- | --- | --- |
+| `workspace.jpg` | 1507 × 820 | Workspace, all 8 fictional files and one selected track |
+| `magic-review.jpg` | 950 × 690 | Magic suggestion for northbound_-_glass_horizon.mp3 |
+| `library-statistics.jpg` | 930 × 740 | Artist totals for the 24-track demo library |
+| `library-health.jpg` | 930 × 740 | Demo-library Health issue categories |
+| `health-corrections.jpg` | 880 × 700 | Two unchecked Dj Meridian → DJ Meridian suggestions |
+| `library-structure.jpg` | 640 × 640 | Unsaved album/individual-track layout draft |
+| `move-preview.jpg` | 800 × 550 | One fictional individual-track destination preview |
+| `edit-all-tags.jpg` | 900 × 650 | Eight selected files, mixed values, no tag edits |
+| `tag-visibility.jpg` | 680 × 620 | Inspector visibility settings, 9 displayed tags |
+| `workspace-columns.jpg` | 640 × 650 | Independent workspace column choices |
 
-This is a baseline for the publication question, not authorization to capture or publish new images.
+README embeds workspace.jpg, library-statistics.jpg and library-health.jpg. screenshots.md embeds the seven additional current captures. All captures were inspected before publication.
+
+## Previous capture history
+
+- October 22, 2026: workspace.png, **0.7.0 Alpha Build 1**, supplied by Nate. That older PNG remains in the repository for historical reference and is no longer embedded in README. Its capture version has not been relabeled.
+- October 19, 2026: workspace.jpg and the six original gallery views, **0.5.2 Alpha Build 52**. Those JPEG files were replaced with the current captures above.
+- The previous workspace refresh covered the wider toolbar and revised icons. Since then, the app gained shared/mixed-value tag editing, embedded Lyrics, Edit ALL Tags, independent tag/column visibility, Auto Fit Columns, and restored native window controls. The old workspace capture no longer represented the current UI.
+
+## Publication rule
+
+Before each future GitHub publication, ask Nate the required README-review and screenshot-refresh questions. Include this actual capture date/version/build and a recommendation based on visible changes, not age alone. Refresh remains opt-in, and captions must continue to identify the actual capture build.

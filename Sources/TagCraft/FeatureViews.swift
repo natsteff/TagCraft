@@ -42,6 +42,7 @@ final class FolderMonitor {
             alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard and Open")
             guard alert.runModal() == .alertSecondButtonReturn else { return }
         }
+        baseline = draft
         folder = url
         AppPreferences.defaults.set(url.path, forKey: "lastMusicFolder")
         recentFolders = [url.path] + recentFolders.filter { $0 != url.path }
@@ -70,8 +71,11 @@ final class FolderMonitor {
             }
         }
     }
-    func runPlans(_ plans: [FilePlan], label: String) {
+    func runPlans(_ plans: [FilePlan], label: String, registerUndo: Bool = true, completion: ((Bool) -> Void)? = nil) {
         guard noticeAcknowledged, !busy, !plans.isEmpty else { return }
+        guard confirmHiddenScope(Set(plans.map(\.source)), action: label) else { completion?(false); return }
+        let editingSelection = selection, editingDraft = draft, editingBaseline = baseline
+        let editingFields = inspectorFields, editingCleared = inspectorCleared, editingMixed = inspectorMixed, editingIntent = inspectorTracksIntent
         busy = true; showMoves = false; cancellation = JobCancellation()
         progressDone = 0; progressTotal = plans.count; progressText = label
         failures = []; lastErrors = []
@@ -101,7 +105,20 @@ final class FolderMonitor {
                 tracks.removeAll { $0.url == result.source }
                 if let folder, SourceFiles.includes(result.destination, root: folder, includeSubfolders: includeSubfolders) { tracks.append(track) }
             }
-            busy = false; selection = []; loadSelection()
+            busy = false
+            let allSucceeded = results.count == plans.count && results.allSatisfy { $0.error == nil }
+            if label == "Save Tags" && !allSucceeded {
+                selection = editingSelection; draft = editingDraft; baseline = editingBaseline
+                inspectorFields = editingFields; inspectorCleared = editingCleared; inspectorMixed = editingMixed; inspectorTracksIntent = editingIntent
+            } else { selection = []; loadSelection() }
+            let inverse = results.filter { $0.error == nil && $0.source != $0.destination }.map { result -> FilePlan in
+                let stamp = FileJobs.fingerprint(result.destination)
+                return FilePlan(source: result.destination, destination: result.source, expectedSize: stamp.0, expectedDate: stamp.1)
+            }
+            if registerUndo, !inverse.isEmpty { registerFileUndo(inverse, label: label + (plans.contains { $0.tags != nil || !$0.purge.isEmpty || $0.artwork != nil || $0.removeArtwork } ? " (Filenames Only)" : "")) }
+            if !registerUndo && !allSucceeded { fileUndoManager?.removeAllActions(withTarget: self) }
+            undoRevision += 1
+            completion?(allSucceeded)
             let success = results.filter { $0.error == nil }.count
             message = "\(label): \(success) completed, \(failures.count) failed" + (cancel.isCancelled ? ", cancelled with \(plans.count - results.count) not started." : ".")
             if !lastErrors.isEmpty { message += "\n" + lastErrors.joined(separator: "\n") }
@@ -322,7 +339,7 @@ struct CleanSettingsView: View {
                 }
             }
             HStack { Button("Restore Defaults") { m.cleanRules = CleanRules() }; Spacer(); Button("Done") { dismiss() }.buttonStyle(.borderedProminent) }
-        }.padding(24).frame(width: 850, height: 730)
+        }.padding(24).frame(minWidth: 850, idealWidth: 850, maxWidth: .infinity, minHeight: 480, idealHeight: 730, maxHeight: .infinity).background(ResizableReviewSheet())
     }
     private func rule(_ title: String, example: String, value: Binding<Bool>) -> some View {
         Toggle(isOn: value) {
@@ -377,7 +394,7 @@ struct WorkflowView: View {
                 Spacer(); Button("Close") { dismiss() }
                 Button("Preview \(m.selected.count) Files") { m.previewWorkflow() }.buttonStyle(.borderedProminent).disabled(m.selected.isEmpty || m.busy || m.dirty || !(m.workflow.clean || m.workflow.extract || m.workflow.purge || m.workflow.rename || m.workflow.move))
             }
-        }.padding(24).frame(width: 760, height: 560)
+        }.padding(24).frame(minWidth: 760, idealWidth: 760, maxWidth: .infinity, minHeight: 480, idealHeight: 560, maxHeight: .infinity).background(ResizableReviewSheet())
     }
 }
 struct StatisticsView: View {
@@ -474,7 +491,7 @@ struct StatisticsView: View {
                 Text("Health counts are per issue and can overlap. Bitrate checks require audio statistics. Artist spellings remain distinct; missing fields are Unknown. Size includes tags and artwork.").font(.caption).foregroundStyle(.secondary)
             } else { ContentUnavailableView("No statistics for this library", systemImage: "chart.bar", description: Text("Choose Update Library Statistics to create a snapshot.")) }
             HStack { Spacer(); Button("Done") { dismiss() } }
-        }.padding(24).frame(width: 930, height: 740)
+        }.padding(24).frame(minWidth: 930, idealWidth: 930, maxWidth: .infinity, minHeight: 480, idealHeight: 740, maxHeight: .infinity).background(ResizableReviewSheet())
             .sheet(isPresented: $m.showQuality, onDismiss: { selectedHealth = nil }) { QualityReviewView().environmentObject(m) }
             .onChange(of: category) { _, _ in
                 selectedHealth = nil; query = ""
@@ -515,7 +532,7 @@ struct TechnicalView: View {
                 Button("Remove All Artwork") { m.changeArtwork(remove: true) }.disabled(m.pictures.isEmpty)
                 Spacer(); Button("Done") { dismiss() }
             }
-        }.padding(24).frame(width: 780, height: 530)
+        }.padding(24).frame(minWidth: 780, idealWidth: 780, maxWidth: .infinity, minHeight: 480, idealHeight: 530, maxHeight: .infinity).background(ResizableReviewSheet())
     }
 }
 
@@ -578,7 +595,7 @@ struct JobErrorsView: View {
             Text("Review these errors before retrying. Files changed since preview must be previewed again. Successful files are not repeated by Retry Failed.").font(.callout).foregroundStyle(.secondary)
             ScrollView { Text(m.lastErrors.joined(separator: "\n\n")).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
             HStack { Spacer(); Button("Done") { dismiss() } }
-        }.padding(24).frame(width: 720, height: 480)
+        }.padding(24).frame(minWidth: 720, idealWidth: 720, maxWidth: .infinity, minHeight: 480, idealHeight: 480, maxHeight: .infinity).background(ResizableReviewSheet())
     }
 }
 
@@ -706,7 +723,7 @@ struct LibraryStructureView: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") { m.libraryStructure = draft; dismiss() }.buttonStyle(.borderedProminent).disabled(!validFolder).keyboardShortcut(.defaultAction)
             }
-        }.padding(24).frame(width: 640)
+        }.padding(24).frame(minWidth: 640, idealWidth: 700, maxWidth: .infinity, minHeight: 480, idealHeight: 640, maxHeight: .infinity).background(ResizableReviewSheet())
             .onAppear { draft = m.libraryStructure; if draft.defaultPlacement != .albums { draft.defaultPlacement = .direct } }
     }
 }

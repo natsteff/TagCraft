@@ -1,4 +1,4 @@
-# TagCraft Music Librarian · Alpha
+# TagCraft Music Librarian · Beta
 
 ![TagCraft Music Librarian logo](Assets/BrandReadme.png)
 
@@ -14,7 +14,9 @@ Use **Clean** to normalize filename spacing, punctuation, capitalization, and un
 
 **Library Statistics and Health** scans your **entire primary music library**, independently of the current working folder. Explore collection-wide track counts, storage totals, and artist, genre, and year summaries. Find missing or suspicious tags, naming variations, inconsistent album artists, and other issues, then review selected corrections. Local SQLite caching lets subsequent scans reuse unchanged file records.
 
-Requires **macOS 14 or later**. Processing and analysis run locally; no online metadata lookup is required. Current alpha: **0.7.0 Alpha, build 1**.
+Requires **macOS 14 or later**. Processing and analysis run locally; no online metadata lookup is required. Current beta: **0.7.0 Beta, build 1**.
+
+The Beta designation is owner-approved; the known music-write limitations below remain unresolved.
 
 ## License & Usage Notice
 
@@ -22,17 +24,17 @@ TagCraft is free, open-source software under the complete [GNU Affero General Pu
 
 Read the [License & Usage Notice](USAGE-NOTICE.md) for TagCraft’s operations, backups and recovery limitations. The same notice and full license are available offline through **License & Usage Notice…** in the app menu and Settings.
 
-**Continue** records acknowledgment locally for the notice identity and app version/build. **Quit** closes the app without recording acknowledgment. New builds or notice changes show it again; old EULA acceptance is not reused. This notice adds no contract or licensing restrictions. AGPL section 9 does not require acceptance merely to receive or run the program. Acknowledgment does not fix known alpha write-safety defects.
+**Continue** records acknowledgment locally for the notice identity and app version/build. **Quit** closes the app without recording acknowledgment. New builds or notice changes show it again; old EULA acceptance is not reused. This notice adds no contract or licensing restrictions. AGPL section 9 does not require acceptance merely to receive or run the program. Acknowledgment does not fix known write-safety defects.
 
 ## Development disclaimer
 
-TagCraft was developed using **OpenAI Codex**, with human direction and review. AI-assisted development and automated tests do not guarantee error-free behavior. This is alpha software; test changes on disposable copies with independent backups before using write operations on an original music library.
+TagCraft was developed using **OpenAI Codex**, with human direction and review. AI-assisted development and automated tests do not guarantee error-free behavior. This is beta software; test changes on disposable copies with independent backups before using write operations on an original music library.
 
 ## Download and install
 
-[**Download macOS Alpha 0.6.0 (Apple silicon)**](https://github.com/natsteff/TagCraft/releases/download/v0.6.0-alpha/TagCraft-0.6.0-alpha-macOS-arm64.dmg) · [All releases](https://github.com/natsteff/TagCraft/releases) · [Installation](#installation)
+[**Download macOS Beta 0.7.0 (Apple silicon)**](https://github.com/natsteff/TagCraft/releases/download/v0.7.0-beta/TagCraft-0.7.0-beta-macOS-arm64.dmg) · [All releases](https://github.com/natsteff/TagCraft/releases) · [Installation](#installation)
 
-**Experimental alpha download.** Requires macOS 14 or later on an Apple silicon Mac (M1 or newer). This release does not include an Intel build. Choose the packaged `.dmg` release asset rather than GitHub’s source-code archives. Test write operations on disposable copies; see the safety limitations below.
+**Experimental beta download.** Requires macOS 14 or later on an Apple silicon Mac (M1 or newer). This release does not include an Intel build. Choose the packaged `.dmg` release asset rather than GitHub’s source-code archives. Test write operations on disposable copies; see the safety limitations below.
 
 ### Installation
 
@@ -75,9 +77,9 @@ Settings, reports, and caches are stored locally. No online metadata service is 
 Other limitations:
 
 - MP3 only; the tag editor supports standard ID3v2.3/v2.4. Unsupported formats or flags are rejected where detected. Legacy ID3v1 fields are not imported into the general inspector.
-- A workspace filter does not clear selected files hidden by that filter. Review the operation's file list before applying.
+- A workspace filter does not clear selected files hidden by that filter. The selection count identifies hidden files, Clear Hidden Selection removes them, and applying an operation that includes them requires confirmation.
 - Cancellation stops remaining work; it does not undo completed files.
-- Undo covers the latest move/rename operation in the current session. Tag recovery is manual from backups.
+- Move/rename operations use the native session Undo/Redo history through Edit → Undo/Redo and Command-Z/Shift-Command-Z. Undo checks for file changes and conflicts. For operations that also write tags, Undo is labeled Filenames Only; tag recovery remains manual from backups.
 - The app is locally ad-hoc signed, not notarized. Full live UI and audible-playback verification remains incomplete.
 
 ## Run and build
@@ -92,13 +94,13 @@ The script builds a release executable into `outputs/TagCraft Music Librarian.ap
 
 ## Screenshots
 
-Actual app captures using fictional artists and original sample artwork. Workspace: **0.7.0 Alpha, build 1**, October 22, 2026. Library Statistics and Health: **0.5.2 Alpha, build 52**, October 19, 2026.
+Actual app captures of **0.7.0 Beta (Build 1)**, October 23, 2026, using fictional artists and original sample artwork. Workspace views show only eight demo files; Statistics and Health use a separate 24-track demo library. No music-file changes were applied for these captures.
 
 ### Workspace
 
 The workspace combines a sortable file list, tag inspector, embedded artwork, and integrated music player.
 
-![TagCraft workspace with fictional tracks, album artwork, tag inspector and integrated music player](docs/images/workspace.png)
+![TagCraft workspace with fictional tracks, album artwork, tag inspector and integrated music player](docs/images/workspace.jpg)
 
 ### Primary library statistics
 
@@ -112,23 +114,29 @@ Select a Health row to review only that issue type.
 
 ![Library Health listing missing album, artwork and track values, naming variations and a suspicious year](docs/images/library-health.jpg)
 
-[More screenshots: Magic, Health corrections, library structure and move previews](screenshots.md)
+[More screenshots: Edit ALL Tags, display settings, Magic, Health corrections, library structure and move previews](screenshots.md)
+
+## Display preferences
+
+**Settings → Tags to Display in Tag Inspector…** controls the 20 editable tag fields. Select All, Select None, or Select from Purge configuration (a one-time inverse of the Purge selection). Hiding tags changes only the display; pending edits must be resolved before those fields can be hidden. Artwork remains available separately. The inspector’s **Tags** menu provides **Select All Tags**, **Select No Tags**, and **Tags to Display…**. A reminder appears when tags are hidden: use **Edit ALL Tags** for editing across selected files, or **Purge** for pre-defined removals.
+
+**Columns → Customize Columns…** beside the workspace selection controls selects any supported tag column. Choices are alphabetized in Shown in Tag Inspector and Hidden from Tag Inspector groups. Workspace columns and inspector visibility are saved independently. Filename and selection remain available; optional columns can all be hidden. Column visibility does not change tags or Purge settings. **Columns → Auto Fit Columns** (also in View) sizes displayed columns using their headers and current filtered rows, with practical limits for filenames and lyrics. Data-column dividers resize independently; horizontal scrolling provides access when the columns exceed the available width. Manual widths are not saved across restarts.
 
 ## Workspace and playback
 
 Open a workspace folder to list its directly contained MP3 files. **Include subfolders** enables recursive listing and starts off each launch. The last workspace and recent folders are remembered. Refresh updates the listing; optional Automatic Refresh is available in Settings.
 
-Select files using checkboxes, Select All Visible/None, Shift-click, or Command-click. Column headers sort the list. The workspace filter is always available beside the folder heading. A resizable Tag Inspector shows the selected file's tags and embedded-artwork preview.
+Select files using checkboxes, Select All Visible/None, Shift-click, or Command-click. Column headers sort the list. The workspace filter is always available beside the folder heading. A resizable Tag Inspector shows the selected file's tags and embedded-artwork preview. View → Show Tag Inspector (Option-Command-I) hides or shows it; Option-Command-[ and Option-Command-] adjust its width. The compact toolbar prioritizes frequent actions; either toolbar layout reveals more actions as the window widens and moves overflow into More as it narrows. Choose the ordering from View or Settings. All file actions are also available in File, Tracks, and Library menus. Review dialogs can be enlarged.
 
 The mini player provides Previous, Play/Pause, Stop, Next, and seeking. Its queue follows the filtered and sorted workspace list independently of the edit selection. File details and completion messages appear at the lower left; active progress and cancellation appear at the lower right.
 
-The action bar supports Icons and Text or Icons Only. Actions that do not fit move into **More**. A single decorative waveform with the version and Alpha label appears at the far right when space permits. **Settings → About TagCraft…** (also in the application menu) always provides the version, build, release channel, and a GitHub link. A short launch splash displays the full logo and shared version label; the empty-workspace welcome view also uses the full logo. Clicking the top-left wordmark opens the [TagCraft GitHub project](https://github.com/natsteff/TagCraft).
+Standard macOS close, minimize and zoom/full-screen controls sit in the title bar above the ribbon. The action bar supports Icons and Text or Icons Only. Actions that do not fit move into **More**. A single decorative waveform with the version and release-channel label appears at the far right when space permits. **Settings → About TagCraft…** (also in the application menu) always provides the version, build, release channel, and a GitHub link. A short launch splash displays the full logo and shared version label; the empty-workspace welcome view also uses the full logo. Clicking the top-left wordmark opens the [TagCraft GitHub project](https://github.com/natsteff/TagCraft).
 
 ## Tags and artwork
 
-The inspector edits 19 fields: title, artist, album, album artist, year, genre, track, disc, composer, conductor, BPM, publisher, copyright, encoded by, language, grouping, subtitle, ISRC, and lyricist.
+The inspector edits 20 fields: title, artist, album, album artist, year, genre, track, disc, composer, conductor, BPM, publisher, copyright, encoded by, language, grouping, subtitle, ISRC, lyricist, and multiline embedded Lyrics (USLT). Synchronized lyrics are preserved but not edited.
 
-**Edit Selected Tags** lets you choose files and fields independently. Shared values appear normally; differing values show **Multiple values**. **Common Fields** selects shared fields. Checked fields replace existing values; a checked blank value clears that field. Save inspector edits before starting another action; selecting another track discards unsaved inspector edits.
+**Edit ALL Tags** lets you choose files and supported editable tags independently, including tags hidden from the inspector. Shared values appear normally; differing values show **Multiple values**. **Common Fields** selects shared fields. Editing checks the field automatically. Untouched blank inputs preserve existing tags; deliberately erasing content keeps the field checked and marks the tag for removal. Clear Selected explicitly marks checked fields for removal, shown in the summary and confirmed before applying. Save inspector edits before starting another action; changing selection asks you to Save Changes, Discard Changes, or Cancel. Failed saves retain your pending inspector edits.
 
 Embedded artwork is visible in the inspector and batch editor. **Artwork & Details…** lists pictures, dimensions, formats, and sizes. Export a picture, choose or drop JPEG/PNG artwork, optionally downscale it, resize an existing front cover, or explicitly remove all artwork. Replacing a front cover is designed to retain other picture types unless **Replace all embedded pictures** is selected; the write-safety limitations above still apply.
 

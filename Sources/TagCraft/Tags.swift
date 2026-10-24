@@ -9,7 +9,7 @@ struct Tags: Equatable, Codable {
         ("TPOS", "Disc"), ("TCOM", "Composer"), ("TPE3", "Conductor"),
         ("TBPM", "BPM"), ("TPUB", "Publisher"), ("TCOP", "Copyright"),
         ("TENC", "Encoded By"), ("TLAN", "Language"), ("TIT1", "Grouping"),
-        ("TIT3", "Subtitle"), ("TSRC", "ISRC"), ("TEXT", "Lyricist")
+        ("TIT3", "Subtitle"), ("TSRC", "ISRC"), ("TEXT", "Lyricist"), ("USLT", "Lyrics")
     ]
     var extra: [String: String] = [:]
     var title = "", artist = "", album = "", albumArtist = "", year = "", genre = "", track = ""
@@ -64,7 +64,11 @@ struct ID3 {
         }
         tags = Tags(title: value(["TIT2"]), artist: value(["TPE1"]), album: value(["TALB"]), albumArtist: value(["TPE2"]), year: value(["TDRC","TYER"]), genre: value(["TCON"]), track: value(["TRCK"]))
         for field in Tags.extraFields {
-            let text = value([field.id])
+            let text: String
+            if field.id == "USLT" {
+                let lyrics = try frames.filter { $0.id == "USLT" }.map { try LyricsFrame.decode($0.payload).text }
+                text = lyrics.first(where: { !$0.isEmpty }) ?? ""
+            } else { text = value([field.id]) }
             if !text.isEmpty { tags.extra[field.id] = text }
         }
     }
@@ -73,8 +77,23 @@ struct ID3 {
         func append(_ f: Frame) {
             body.append(Data(f.id.utf8)); body.append(Self.number(f.payload.count, sync: version == 4)); body.append(f.flags); body.append(f.payload)
         }
-        for f in frames where !Self.keys.contains(f.id) { append(f) }
-        let values = [("TIT2",tags.title),("TPE1",tags.artist),("TALB",tags.album),("TPE2",tags.albumArtist),(version == 4 ? "TDRC" : "TYER",tags.year),("TCON",tags.genre),("TRCK",tags.track)] + Tags.extraFields.map { ($0.id, tags.extra[$0.id] ?? "") }
+        let lyricsChanged = tags.extra["USLT"] != self.tags.extra["USLT"]
+        let newLyrics = tags.extra["USLT"] ?? ""
+        let primaryLyrics = frames.indices.first { frames[$0].id == "USLT" && ((try? LyricsFrame.decode(frames[$0].payload).text.isEmpty) == false) } ?? frames.indices.first { frames[$0].id == "USLT" }
+        for (index, f) in frames.enumerated() {
+            if f.id == "USLT" {
+                if !lyricsChanged { append(f) }
+                else if !newLyrics.isEmpty {
+                    if index == primaryLyrics, var entry = try? LyricsFrame.decode(f.payload) {
+                        entry.text = newLyrics; append(Frame(id: "USLT", payload: entry.payload(version: version), flags: Data([0,0])))
+                    } else { append(f) }
+                }
+            } else if !Self.keys.contains(f.id) { append(f) }
+        }
+        if lyricsChanged && !newLyrics.isEmpty && primaryLyrics == nil {
+            append(Frame(id: "USLT", payload: LyricsFrame(language: "und", descriptor: "", text: newLyrics).payload(version: version), flags: Data([0,0])))
+        }
+        let values = [("TIT2",tags.title),("TPE1",tags.artist),("TALB",tags.album),("TPE2",tags.albumArtist),(version == 4 ? "TDRC" : "TYER",tags.year),("TCON",tags.genre),("TRCK",tags.track)] + Tags.extraFields.filter { $0.id != "USLT" }.map { ($0.id, tags.extra[$0.id] ?? "") }
         for (key, value) in values where !value.isEmpty {
             var payload: Data
             if let latin = value.data(using: .isoLatin1) {
@@ -405,7 +424,7 @@ struct PurgeField: Identifiable {
         .init(id: "Album", frames: ["TALB"]), .init(id: "Album Artist", frames: ["TPE2"]),
         .init(id: "Year / Recording Date", frames: ["TYER", "TDRC"]),
         .init(id: "Genre", frames: ["TCON"]), .init(id: "Track", frames: ["TRCK"])
-    ] + Tags.extraFields.map { .init(id: $0.label, frames: [$0.id]) } + [
+    ] + Tags.extraFields.filter { $0.id != "USLT" }.map { .init(id: $0.label, frames: [$0.id]) } + [
         .init(id: "Artwork", frames: ["APIC"]), .init(id: "Comments", frames: ["COMM"]),
         .init(id: "Lyrics (plain and synchronized)", frames: ["USLT", "SYLT"]),
         .init(id: "Ratings / Play Counts", frames: ["POPM", "PCNT"]),

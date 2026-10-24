@@ -4,6 +4,10 @@ import AVFoundation
 
 enum AppPreferences {
     static let defaults: UserDefaults = {
+        #if TAGCRAFT_UI_CHECKS
+        // Test models and previews must never migrate or modify Nate's settings.
+        return UserDefaults(suiteName: "local.tagcraft.ui-check." + UUID().uuidString)!
+        #else
         // An explicitly named suite is independent of executable names and versions.
         let defaults = UserDefaults(suiteName: "local.tagcraft.musiclibrarian.preferences")!
         if !defaults.bool(forKey: "didMigrateStablePreferences") {
@@ -20,6 +24,7 @@ enum AppPreferences {
             defaults.synchronize()
         }
         return defaults
+        #endif
     }()
 }
 
@@ -34,6 +39,21 @@ struct Track: Identifiable {
     var album: String { tags.album }
     var trackNumber: String { tags.track }
     var year: String { tags.year }
+    var albumArtistColumn: String { tags.value("Album Artist") }
+    var discColumn: String { tags.value("Disc") }
+    var composerColumn: String { tags.value("Composer") }
+    var conductorColumn: String { tags.value("Conductor") }
+    var bpmColumn: String { tags.value("BPM") }
+    var publisherColumn: String { tags.value("Publisher") }
+    var copyrightColumn: String { tags.value("Copyright") }
+    var encodedByColumn: String { tags.value("Encoded By") }
+    var languageColumn: String { tags.value("Language") }
+    var groupingColumn: String { tags.value("Grouping") }
+    var subtitleColumn: String { tags.value("Subtitle") }
+    var isrcColumn: String { tags.value("ISRC") }
+    var lyricistColumn: String { tags.value("Lyricist") }
+    var lyricsColumn: String { tags.value("Lyrics") }
+    var genreColumn: String { tags.value("Genre") }
     var status: String { issue == nil ? "Ready" : "Read only" }
 }
 struct MoveItem: Identifiable {
@@ -48,6 +68,17 @@ struct MoveItem: Identifiable {
 @MainActor final class Model: ObservableObject {
     @Published var noticeAcknowledged = LicenseAcceptance.isAcknowledged(defaults: AppPreferences.defaults, release: AppRelease.noticeRelease)
     @Published var showReadTerms = false
+    @Published var showInspectorDisplaySettings = false
+    @Published var showColumnSettings = false
+    @Published var columnFitRequest = UUID()
+    func autoFitColumns() { columnFitRequest = UUID() }
+    @Published var inspectorDisplayedFields = TagVisibility.load("inspectorDisplayedFields", defaults: AppPreferences.defaults, fallback: Set(TagVisibility.tags), allowed: Set(TagVisibility.tags)) {
+        didSet { AppPreferences.defaults.set(inspectorDisplayedFields.sorted(), forKey: "inspectorDisplayedFields") }
+    }
+    @Published var workspaceColumns = TagVisibility.load("workspaceColumns", defaults: AppPreferences.defaults, fallback: TagVisibility.defaultColumns, allowed: TagVisibility.columnChoices).union(["Filename"]) {
+        didSet { AppPreferences.defaults.set(workspaceColumns.sorted(), forKey: "workspaceColumns") }
+    }
+
     @Published var tracks: [Track] = []
     @Published var selection = Set<URL>()
     @Published var folder: URL?
@@ -57,6 +88,11 @@ struct MoveItem: Identifiable {
     @Published var sortOrder = [KeyPathComparator(\Track.filename, comparator: .localizedStandard)]
     @Published var draft = Tags()
     @Published var baseline = Tags()
+    @Published var inspectorMixed = Set<String>()
+    @Published var inspectorFields = Set<String>()
+    @Published var inspectorCleared = Set<String>()
+    var inspectorTracksIntent = false
+    @Published var batchCleared = Set<String>()
     @Published var message = ""
     @Published var moves: [MoveItem] = []
     @Published var showUpdateCheck = false
@@ -174,7 +210,10 @@ struct MoveItem: Identifiable {
     var folderMonitor: FolderMonitor?
     var previewFingerprints: [URL: (Int?, Date?)] = [:]
     let playback = PlaybackController()
-    var undoMoves: [(URL,URL)] = []
+    @Published var undoMoves: [(URL,URL)] = []
+    @Published var undoRevision = 0
+    weak var fileUndoManager: UndoManager?
+    var undoObservers: [NSObjectProtocol] = []
     var undoTracks: [URL: Track] = [:]
     var scanToken = UUID()
     var selected: [Track] { tracks.filter { selection.contains($0.url) } }
@@ -184,7 +223,12 @@ struct MoveItem: Identifiable {
     }
     var eligibleMoves: [MoveItem] { moves.filter { $0.issue == nil && !excluded.contains($0.source) } }
     private var restoredMusicFolder = false
-    var dirty: Bool { draft != baseline }
+    var inspectorPatch: TagEditPatch {
+        let inferred = Set(TagEditPatch.fields.filter { draft.value($0) != baseline.value($0) })
+        return TagEditPatch(draft: draft, checked: inspectorTracksIntent ? inspectorFields : inferred, cleared: inspectorCleared)
+    }
+    var batchPatch: TagEditPatch { TagEditPatch(draft: batchDraft, checked: batchFields, cleared: batchCleared) }
+    var dirty: Bool { !inspectorPatch.effective.isEmpty }
     func restoreMusicFolder() {
         guard noticeAcknowledged, !restoredMusicFolder else { return }
         restoredMusicFolder = true
@@ -229,6 +273,7 @@ struct MoveItem: Identifiable {
     }
     func scan() {
         guard noticeAcknowledged, !busy, let folder else { return }
+        guard !dirty else { message = "Save or discard inspector edits before refreshing the workspace."; return }
         var directory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &directory), directory.boolValue,
               FileManager.default.isReadableFile(atPath: folder.path) else {
@@ -261,57 +306,119 @@ struct MoveItem: Identifiable {
             message = "\(tracks.count) MP3 files found" + (includeSubfolders ? " in this folder and its subfolders." : " in this folder.") + (scanResult.1 > 0 ? " \(ScanProgress.count(scanResult.1)) symbolic links skipped." : "")
         }
     }
+    var hiddenSelection: Set<URL> { selection.subtracting(Set(filtered.map(\.url))) }
+    var selectionSummary: String {
+        "\(selection.count) selected" + (hiddenSelection.isEmpty ? "" : ", including \(hiddenSelection.count) hidden by the filter")
+    }
+    func requestSelection(_ next: Set<URL>) {
+        guard !busy, next != selection else { return }
+        guard dirty else { selection = next; return }
+        let alert = NSAlert()
+        alert.messageText = "Save tag changes before changing selection?"
+        alert.informativeText = "Your selected files have unsaved edits. Save writes those edits; Discard changes only the selection without saving."
+        alert.addButton(withTitle: "Save Changes")
+        alert.addButton(withTitle: "Discard Changes")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            save(onSuccess: { [weak self] in self?.selection = next; self?.loadSelection() })
+        case .alertSecondButtonReturn: selection = next
+        default: break
+        }
+    }
+    func confirmHiddenScope(_ urls: Set<URL>, action: String) -> Bool {
+        let hidden = urls.intersection(hiddenSelection)
+        guard !hidden.isEmpty else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Include files hidden by the filter?"
+        alert.informativeText = "\(action): \(urls.count) in scope; \(hidden.count) hidden by the filter. Cancel to clear the filter and review the full selection first."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Include Hidden Files")
+        return alert.runModal() == .alertSecondButtonReturn
+    }
     func loadSelection() {
-        if let first = selected.first { draft = first.tags } else { draft = Tags() }
+        draft = Tags(); inspectorMixed = []; inspectorFields = []; inspectorCleared = []; inspectorTracksIntent = false
+        for name in TagEditPatch.fields {
+            let common = MixedTagValues.value(name, in: selected.map(\.tags))
+            draft.set(name, common.value)
+            if common.mixed { inspectorMixed.insert(name) }
+        }
         baseline = draft
         refreshInspectorArtwork()
     }
-    func save(overrides: [URL: Tags]? = nil, artworkData: Data? = nil, removeArtwork: Bool = false) {
+    func save(overrides: [URL: Tags]? = nil, artworkData: Data? = nil, removeArtwork: Bool = false, onSuccess: (() -> Void)? = nil) {
         guard !busy else { return }
-        let plans = selected.map { track -> FilePlan in
-            var tags = overrides?[track.url] ?? track.tags
-            if overrides == nil {
-                for name in FilenameMask.fields where name != "Skip" {
-                    if selected.count == 1 || draft.value(name) != baseline.value(name) { tags.set(name, draft.value(name)) }
-                }
-            }
+        let patch = inspectorPatch
+        if overrides == nil && !confirmTagRemoval(patch, count: selected.count) { return }
+        let plans = selected.compactMap { track -> FilePlan? in
+            let tags = overrides?[track.url] ?? patch.applying(to: track.tags)
+            guard tags != track.tags || artworkData != nil || removeArtwork else { return nil }
             let stamp = FileJobs.fingerprint(track.url)
             return FilePlan(source: track.url, destination: track.url, tags: tags, artwork: artworkData, removeArtwork: removeArtwork, replaceAllArtwork: replaceAllArtwork, expectedSize: stamp.0, expectedDate: stamp.1)
         }
-        runPlans(plans, label: "Save Tags")
+        if plans.isEmpty { loadSelection(); onSuccess?(); return }
+        runPlans(plans, label: "Save Tags", completion: { success in if success { onSuccess?() } })
     }
     func beginBatch() {
         guard !busy else { return }
         batchCandidates = selected
         batchTargets = selection
-        batchFields = []
+        batchFields = []; batchCleared = []
         batchArtworkData = nil; batchApplyArtwork = false; batchRemoveArtwork = false
         refreshBatchArtwork()
         refreshBatchValues()
         showBatch = true
     }
     func applyBatch() {
-        let previousSelection = selection
-        var replacements: [URL: Tags] = [:]
-        for track in batchCandidates where batchTargets.contains(track.url) {
-            var tags = track.tags
-            if batchFields.contains("Title") { tags.title = batchDraft.title }
-            if batchFields.contains("Artist") { tags.artist = batchDraft.artist }
-            if batchFields.contains("Album") { tags.album = batchDraft.album }
-            if batchFields.contains("Album Artist") { tags.albumArtist = batchDraft.albumArtist }
-            if batchFields.contains("Year") { tags.year = batchDraft.year }
-            if batchFields.contains("Genre") { tags.genre = batchDraft.genre }
-            if batchFields.contains("Track") { tags.track = batchDraft.track }
-            for field in Tags.extraFields where batchFields.contains(field.label) {
-                tags.extra[field.id] = batchDraft.extra[field.id]
-            }
-            replacements[track.url] = tags
+        let patch = batchPatch
+        guard confirmTagRemoval(patch, count: batchTargets.count) else { return }
+        let inputs = batchCandidates.filter { batchTargets.contains($0.url) }
+        let plans = inputs.compactMap { track -> FilePlan? in
+            let tags = patch.applying(to: track.tags)
+            let artwork = batchApplyArtwork && !batchRemoveArtwork ? batchArtworkData : nil
+            let remove = batchApplyArtwork && batchRemoveArtwork
+            guard tags != track.tags || artwork != nil || remove else { return nil }
+            let stamp = FileJobs.fingerprint(track.url)
+            return FilePlan(source: track.url, destination: track.url, tags: tags, artwork: artwork, removeArtwork: remove, replaceAllArtwork: replaceAllArtwork, expectedSize: stamp.0, expectedDate: stamp.1)
         }
-        selection = batchTargets
-        save(overrides: replacements, artworkData: batchApplyArtwork && !batchRemoveArtwork ? batchArtworkData : nil, removeArtwork: batchApplyArtwork && batchRemoveArtwork)
-        selection = previousSelection
-        loadSelection()
-        showBatch = false
+        guard !plans.isEmpty else { message = "No tag changes to apply."; return }
+        runPlans(plans, label: "Edit ALL Tags", completion: { [weak self] success in if success { self?.showBatch = false } })
+    }
+    func confirmTagRemoval(_ patch: TagEditPatch, count: Int) -> Bool {
+        guard !patch.effective.intersection(patch.cleared).isEmpty else { return true }
+        let alert = NSAlert(); alert.messageText = "Remove the selected tags?"
+        alert.informativeText = "Selected tracks: \(count)\n" + patch.summary + "\nOther fields are preserved. Full file backups are created."
+        alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Apply Tag Changes")
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+    func editTagField(_ name: String, value: String, batch: Bool) {
+        let previous = (batch ? batchDraft : draft).value(name)
+        guard value != previous else { return }
+        let blank = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let erased = blank && !previous.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if batch {
+            batchDraft.set(name, value)
+            if !blank { batchFields.insert(name); batchCleared.remove(name) }
+            else if erased || batchCleared.contains(name) { batchFields.insert(name); batchCleared.insert(name) }
+            else { batchFields.remove(name) }
+        } else {
+            inspectorTracksIntent = true; draft.set(name, value)
+            if !blank { inspectorFields.insert(name); inspectorCleared.remove(name) }
+            else if erased || inspectorCleared.contains(name) { inspectorFields.insert(name); inspectorCleared.insert(name) }
+            else { inspectorFields.remove(name) }
+        }
+    }
+    func checkTagField(_ name: String, enabled: Bool, batch: Bool) {
+        if batch {
+            if enabled { batchFields.insert(name) } else { batchFields.remove(name); batchCleared.remove(name) }
+        } else {
+            inspectorTracksIntent = true
+            if enabled { inspectorFields.insert(name) } else { inspectorFields.remove(name); inspectorCleared.remove(name) }
+        }
+    }
+    func clearCheckedTags(batch: Bool) {
+        if batch { batchCleared = batchFields; for name in batchFields { batchDraft.set(name, "") } }
+        else { inspectorTracksIntent = true; inspectorCleared = inspectorFields; for name in inspectorFields { draft.set(name, "") } }
     }
     func previewPurge() {
         guard !busy else { return }
@@ -454,29 +561,25 @@ struct MoveItem: Identifiable {
         }
         runPlans(plans, label: operation)
     }
-    func undoMove() {
-        let plans = undoMoves.reversed().map { current, original -> FilePlan in
-            let stamp = FileJobs.fingerprint(current)
-            return FilePlan(source: current, destination: original, expectedSize: stamp.0, expectedDate: stamp.1)
-        }
-        runPlans(plans, label: "Undo File Action")
-    }
+    func undoMove() { guard !busy else { return }; fileUndoManager?.undo() }
     func play() {
         guard let track = filtered.first(where: { selection.contains($0.url) }) else { return }
         playback.play(PlaybackTrack(track))
     }
 }
 
+#if !TAGCRAFT_UI_CHECKS
 @main struct TagCraftApp: App {
     @NSApplicationDelegateAdaptor(LaunchDelegate.self) private var launchDelegate
     @StateObject private var model = Model()
     var body: some Scene {
         WindowGroup("TagCraft Music Librarian") {
             LicenseGateRoot().environmentObject(model).frame(minWidth: 1050, minHeight: 620)
-                .background(LaunchWindowGate())
-        }.windowStyle(.hiddenTitleBar)
+                .background(LaunchWindowGate()).onAppear { launchDelegate.model = model }
+        }.windowStyle(.titleBar)
         Settings { LicenseGateRoot(settings: true).environmentObject(model) }
         .commands {
+            WorkspaceCommands(model: model)
             CommandGroup(replacing: .appInfo) {
                 Button("About TagCraft…") { model.showAbout = true }.disabled(!model.noticeAcknowledged)
                 Button("Check for Updates…") { model.showUpdateCheck = true }.disabled(!model.noticeAcknowledged)
@@ -485,27 +588,40 @@ struct MoveItem: Identifiable {
         }
     }
 }
+#endif
 final class SelectionHeader: NSTableHeaderView {
     var toggleAll: (() -> Void)?
+    // Keep divider hit testing with AppKit; only the selection header's interior toggles.
+    func isSelectionClick(_ point: NSPoint) -> Bool {
+        guard column(at: point) == 0 else { return false }
+        return point.x < headerRect(ofColumn: 0).maxX - 6
+    }
     override func mouseDown(with event: NSEvent) {
-        if column(at: convert(event.locationInWindow, from: nil)) == 0 {
+        if isSelectionClick(convert(event.locationInWindow, from: nil)) {
             toggleAll?()
         } else { super.mouseDown(with: event) }
     }
 }
 final class ToolbarAnchor: NSView {
-    private var configured = false
+    var lastColumnFitRequest: UUID?
+    var configureTable: (() -> Void)?
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didUpdateNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowUpdated), name: NSWindow.didUpdateNotification, object: window)
+        }
         DispatchQueue.main.async {
-            guard !self.configured, let toolbar = self.window?.toolbar else { return }
-            toolbar.displayMode = .iconAndLabel
-            self.window?.titleVisibility = .hidden
-            self.configured = true
+            self.configureTable?()
         }
     }
+    @objc private func windowUpdated(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in self?.configureTable?() }
+    }
+    deinit { NotificationCenter.default.removeObserver(self) }
 }
 struct ToolbarDefaults: NSViewRepresentable {
+    var model: Model
     var toggleAll: () -> Void
     var allSelected: Bool
     func makeNSView(context: Context) -> NSView {
@@ -513,13 +629,28 @@ struct ToolbarDefaults: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: NSView, context: Context) {
-        DispatchQueue.main.async {
+        let configure: () -> Void = { [weak view] in
+            guard let view else { return }
+            if let manager = view.window?.undoManager { model.installUndoManager(manager) }
             func findTable(_ root: NSView) -> NSTableView? {
-                if let table = root as? NSTableView, table.tableColumns.count == 8 { return table }
+                if let table = root as? NSTableView, table.tableColumns.first?.title == "✓" || table.tableColumns.first?.title == "☐" || table.tableColumns.first?.title == "☑" { return table }
                 for child in root.subviews { if let table = findTable(child) { return table } }
                 return nil
             }
-            guard let root = view.window?.contentView, let table = findTable(root) else { return }
+            guard let root = view.window?.contentView, let table = findTable(root),
+                  let anchor = view as? ToolbarAnchor else { return }
+            let selectionTitle = allSelected ? "☑" : "☐"
+            let needsConfiguration = !(table.headerView is SelectionHeader)
+                || table.columnAutoresizingStyle != .noColumnAutoresizing
+                || anchor.lastColumnFitRequest != model.columnFitRequest
+                || table.tableColumns.first?.title != selectionTitle
+                || table.tableColumns.dropFirst().contains { column in
+                    column.isHidden != (column.title != "Filename" && !model.workspaceColumns.contains(column.title))
+                    || column.resizingMask != .userResizingMask
+                }
+            // Window updates occur after SwiftUI has reconciled its native table.
+            // Do nothing when already configured, avoiding a redraw/update loop.
+            guard needsConfiguration else { return }
             let header: SelectionHeader
             if let existing = table.headerView as? SelectionHeader { header = existing }
             else {
@@ -528,9 +659,20 @@ struct ToolbarDefaults: NSViewRepresentable {
                 header.toolTip = "Click the selection header to select or deselect all visible tracks. Click data headers to sort."
             }
             header.toggleAll = toggleAll
+            // Native visibility supports macOS 14.0; conditional SwiftUI columns require 14.4.
+            // The SwiftUI definitions retain stable column identities and sorting.
+            WorkspaceTableLayout.configure(table, visible: model.workspaceColumns)
+            if let anchor = view as? ToolbarAnchor {
+                if anchor.lastColumnFitRequest != model.columnFitRequest {
+                    WorkspaceTableLayout.fit(table, tracks: model.filtered)
+                }
+                anchor.lastColumnFitRequest = model.columnFitRequest
+            }
             table.tableColumns.first?.title = allSelected ? "☑" : "☐"
             header.needsDisplay = true
         }
+        (view as? ToolbarAnchor)?.configureTable = configure
+        DispatchQueue.main.async(execute: configure)
     }
 }
 struct QuickHint: ViewModifier {
@@ -593,7 +735,7 @@ struct PurgeSettingsView: View {
             }
             Text("Applies to supported ID3v2.3/v2.4 frames. Corresponding legacy ID3v1 fields are cleared too. Backups are made before each purge.").font(.caption).foregroundStyle(.secondary)
             HStack { Text("\(m.purgeFields.count) fields selected").font(.caption); Spacer(); Button("Done") { dismiss() }.buttonStyle(.borderedProminent) }
-        }.padding(24).frame(width: 580, height: 600)
+        }.padding(24).frame(minWidth: 580, idealWidth: 580, maxWidth: .infinity, minHeight: 480, idealHeight: 600, maxHeight: .infinity).background(ResizableReviewSheet())
     }
 }
 struct ActionBarLabel: LabelStyle {
@@ -601,7 +743,7 @@ struct ActionBarLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(spacing: 5) {
             configuration.icon.font(.system(size: 18)).frame(height: 28)
-            if showText { configuration.title.font(.system(size: 10)).lineLimit(1) }
+            if showText { configuration.title.font(.system(size: 12)).lineLimit(1) }
         }.padding(.horizontal, 4).frame(minHeight: 48)
             .contentShape(Rectangle())
     }
@@ -660,6 +802,7 @@ struct ContentView: View {
     @EnvironmentObject var m: Model
     @AppStorage("inspectorWidth", store: AppPreferences.defaults) private var inspectorWidth = 405.0
     @State private var inspectorDragStart: Double?
+    @AppStorage("showInspector", store: AppPreferences.defaults) private var showInspector = true
     @FocusState private var filterFocused: Bool
     @State private var showMaskBuilder = false
     @State private var maskDraft = ""
@@ -669,6 +812,7 @@ struct ContentView: View {
         return !visible.isEmpty && visible.isSubset(of: m.selection) ? "checkmark.square.fill" : "square"
     }
     var body: some View {
+        GeometryReader { geometry in
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -681,7 +825,10 @@ struct ContentView: View {
                                         .textSelection(.enabled).lineLimit(2).help(folder.path)
                                 }
                             }
-                            Text("\(m.tracks.count) tracks · \(m.selection.count) selected").foregroundStyle(.secondary).font(.caption)
+                            Text("\(m.tracks.count) tracks · " + m.selectionSummary).foregroundStyle(m.hiddenSelection.isEmpty ? Color.secondary : Color.primary).font(.callout)
+                            if !m.hiddenSelection.isEmpty {
+                                Button("Clear Hidden Selection") { m.requestSelection(m.selection.subtracting(m.hiddenSelection)) }.buttonStyle(.link).disabled(m.busy)
+                            }
                         }
                         Spacer()
                         HStack(spacing: 6) {
@@ -691,7 +838,7 @@ struct ContentView: View {
                                 .help("Filter by artist, title, album or filename")
                             if !m.query.isEmpty {
                                 Button { m.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                                    .buttonStyle(.plain).help("Clear filter")
+                                    .buttonStyle(.plain).help("Clear filter").accessibilityLabel("Clear workspace filter")
                             }
                         }.padding(8).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
                             .frame(minWidth: 150, idealWidth: 240, maxWidth: 280)
@@ -711,31 +858,34 @@ struct ContentView: View {
                             .toggleStyle(.checkbox)
                             .help("Include MP3 files in every subfolder, including the library if it is inside this folder")
                             .onChange(of: m.includeSubfolders) { _, _ in m.scan() }
-                        Button("Select All Visible") { m.selection.formUnion(m.filtered.map(\.url)) }
+                        Button("Select All Visible") { m.requestSelection(m.selection.union(m.filtered.map(\.url))) }
                             .help("Select every track matching the current filter")
-                        Button("Select None") { m.selection = [] }
+                        Button("Select None") { m.requestSelection([]) }
                             .help("Clear the track selection")
+                        Menu("Columns") {
+                            Button("Customize Columns…") { m.showColumnSettings = true }
+                            Button("Auto Fit Columns") { m.autoFitColumns() }
+                        }.fixedSize()
                         Text("Use checkboxes, Shift-click for a range, or Command-click for individual tracks.")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                     }.padding(.horizontal).padding(.bottom, 10)
-                    Table(m.filtered, selection: $m.selection, sortOrder: $m.sortOrder) {
+                    Table(m.filtered, selection: Binding(get: { m.selection }, set: { m.requestSelection($0) }), sortOrder: $m.sortOrder) {
                         TableColumn("✓") { (track: Track) in
                             Toggle("Select \(track.filename)", isOn: Binding(
                                 get: { m.selection.contains(track.url) },
                                 set: { checked in
-                                    if checked { m.selection.insert(track.url) } else { m.selection.remove(track.url) }
+                                    var next = m.selection
+                                    if checked { next.insert(track.url) } else { next.remove(track.url) }
+                                    m.requestSelection(next)
                                 }
                             )).toggleStyle(.checkbox).labelsHidden()
                                 .help("Select or deselect \(track.filename)")
                         }.width(30)
-                        TableColumn("Filename", value: \.filename) { track in PlayingFilename(track: track, playback: m.playback) }.width(min: 180, ideal: 240)
-                        TableColumn("Artist", value: \.artist).width(min: 100, ideal: 140)
-                        TableColumn("Title", value: \.title).width(min: 100, ideal: 160)
-                        TableColumn("Album", value: \.album).width(min: 100, ideal: 140)
-                        TableColumn("Track", value: \.trackNumber).width(50)
-                        TableColumn("Year", value: \.year).width(50)
-                        TableColumn("Status", value: \.status) { Text($0.issue == nil ? "Ready" : "Read only").foregroundStyle($0.issue == nil ? Color.secondary : Color.orange).help($0.issue ?? "") }.width(70)
+                        workspaceColumnGroup0
+                        workspaceColumnGroup1
+                        workspaceColumnGroup2
+
                     }
                     .overlay {
                         if m.folder == nil {
@@ -752,7 +902,7 @@ struct ContentView: View {
                     .contextMenu {
                         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting(m.selected.map(\.url)) }
                         Button("Edit Tags in Selected Files…") { m.beginBatch() }.disabled(m.selection.isEmpty || m.dirty)
-                        Button("Select All Visible Tracks") { m.selection = Set(m.filtered.map(\.url)) }
+                        Button("Select All Visible Tracks") { m.requestSelection(Set(m.filtered.map(\.url))) }
                         Button("Play") { m.play() }.disabled(m.selection.isEmpty)
                     }
                     Divider()
@@ -781,7 +931,8 @@ struct ContentView: View {
                         .padding(.horizontal, 12).frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38)
                         .accessibilityElement(children: .contain).accessibilityLabel("Workspace status")
                 }
-                Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 6)
+                if showInspector {
+                Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 10)
                     .overlay { Rectangle().fill(Color.secondary.opacity(0.4)).frame(width: 1) }
                     .contentShape(Rectangle())
                     .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
@@ -789,13 +940,27 @@ struct ContentView: View {
                         if inspectorDragStart == nil { inspectorDragStart = inspectorWidth }
                         inspectorWidth = min(700, max(300, (inspectorDragStart ?? 405) - value.translation.width))
                     }.onEnded { _ in inspectorDragStart = nil })
-                    .accessibilityLabel("Resize Tag Inspector")
+                    .accessibilityLabel("Tag Inspector width")
+                    .accessibilityValue("\(Int(min(inspectorWidth, max(300, geometry.size.width * 0.4)))) points")
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: inspectorWidth = min(700, inspectorWidth + 40)
+                        case .decrement: inspectorWidth = max(300, inspectorWidth - 40)
+                        @unknown default: break
+                        }
+                    }
+                    .contextMenu {
+                        Button("Narrower Inspector") { inspectorWidth = max(300, inspectorWidth - 40) }
+                        Button("Wider Inspector") { inspectorWidth = min(700, inspectorWidth + 40) }
+                        Button("Hide Inspector") { showInspector = false }
+                    }
                     .help("Drag left or right to resize the Tag Inspector")
-                inspector.frame(width: inspectorWidth).disabled(m.busy)
+                inspector.frame(width: min(inspectorWidth, max(300, geometry.size.width * 0.4))).disabled(m.busy)
+                }
             }
             .safeAreaInset(edge: .top, spacing: 0) { actionBar }
-            .ignoresSafeArea(.container, edges: .top)
 
+        }
         }
         .task { m.restoreMusicFolder(); m.restoreStatistics() }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -809,11 +974,9 @@ struct ContentView: View {
             }
             return true
         }
-        .toolbar(.hidden, for: .windowToolbar)
-        .background(ToolbarDefaults(toggleAll: {
+        .background(ToolbarDefaults(model: m, toggleAll: {
             let visible = Set(m.filtered.map(\.url))
-            if visible.isSubset(of: m.selection) { m.selection.subtract(visible) }
-            else { m.selection.formUnion(visible) }
+            m.requestSelection(visible.isSubset(of: m.selection) ? m.selection.subtracting(visible) : m.selection.union(visible))
         }, allSelected: selectionHeaderIcon == "checkmark.square.fill"))
         .sheet(isPresented: Binding(get: { m.showQuality && !m.showStatistics }, set: { m.showQuality = $0 })) { QualityReviewView().environmentObject(m) }
         .sheet(isPresented: $m.showJobErrors) { JobErrorsView().environmentObject(m) }
@@ -826,12 +989,15 @@ struct ContentView: View {
         .sheet(isPresented: $m.showUpdateCheck) { UpdateCheckView() }
         .sheet(isPresented: $m.showAbout) { AboutTagCraftView() }
         .sheet(isPresented: $m.showLibraryStructure) { LibraryStructureView().environmentObject(m) }
+        .sheet(isPresented: $m.showInspectorDisplaySettings) { InspectorDisplaySettings().environmentObject(m) }
+        .sheet(isPresented: $m.showColumnSettings) { WorkspaceColumnSettings().environmentObject(m) }
         .sheet(isPresented: $m.showPurgeSettings) { PurgeSettingsView().environmentObject(m) }
         .sheet(isPresented: $m.showBatch) { batchEditor }
         .sheet(isPresented: $m.showMoves) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(m.operation == "Preparation Workflow" ? m.workflow.name : m.operation).font(.title2.bold())
+                    Text(m.selectionSummary).font(.callout)
                     if m.operation == "Move to Library", let library = m.library {
                         Text(library.path).font(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -933,7 +1099,7 @@ struct ContentView: View {
                     .listRowBackground(item.warning == nil ? Color.clear : Color.yellow.opacity(0.22))
                 }
                 HStack { Spacer(); Button("Cancel") { m.showMoves = false }; Button("\(m.operation == "Purge Tags" ? "Purge" : "Apply to") \(m.eligibleMoves.count) Files") { m.applyPreview() }.buttonStyle(.borderedProminent).tint(m.operation == "Purge Tags" ? .red : .accentColor).disabled(m.eligibleMoves.isEmpty || m.busy) }
-            }.padding(24).frame(width: 800, height: 550)
+            }.padding(24).frame(minWidth: 800, idealWidth: 800, maxWidth: .infinity, minHeight: 480, idealHeight: 550, maxHeight: .infinity).background(ResizableReviewSheet())
                 .onAppear {
                     m.excluded = []
                     m.previewFingerprints = Dictionary(uniqueKeysWithValues: m.moves.map { ($0.source, FileJobs.fingerprint($0.source)) })
@@ -977,8 +1143,8 @@ struct ContentView: View {
                 Button("Clear Recent Workspaces") { m.clearRecentWorkspaces() }.disabled(m.recentFolders.isEmpty)
             } label: { Label("Open Workspace", systemImage: "folder") }
         case 2: Button { m.scan() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.disabled(m.folder == nil)
-        case 5: Button { m.undoMove() } label: { Label("Undo File Action", systemImage: "arrow.uturn.backward") }.disabled(m.undoMoves.isEmpty)
-        case 6: Button { m.beginBatch() } label: { Label { Text("Edit Selected Tags") } icon: { EditSelectedTagsIcon() } }.disabled(m.selection.isEmpty || m.dirty)
+        case 5: Button { m.undoMove() } label: { Label(m.fileUndoManager?.undoMenuItemTitle ?? "Undo", systemImage: "arrow.uturn.backward") }.disabled(m.fileUndoManager?.canUndo != true)
+        case 6: Button { m.beginBatch() } label: { Label { Text("Edit ALL Tags") } icon: { EditSelectedTagsIcon() } }.help("Edit all supported tags in the selected files, including tags hidden from Tag Inspector.").disabled(m.selection.isEmpty || m.dirty)
         case 7: Button { m.previewClean() } label: { Label { Text("Clean") } icon: { BroomIcon() } }.disabled(m.selection.isEmpty || m.dirty)
         case 8: Button { m.beginMagic() } label: { Label("Magic", systemImage: "wand.and.stars") }.disabled(m.selection.isEmpty || m.dirty)
         case 9: Button { m.previewPurge() } label: { Label("Purge", systemImage: "eraser") }.disabled(m.selection.isEmpty || m.dirty)
@@ -993,11 +1159,15 @@ struct ContentView: View {
                 Button("Clean Rules…") { m.showCleanSettings = true }
                 Button("Preparation Workflows…") { m.showWorkflow = true }
                 Button("Tags to Purge…") { m.showPurgeSettings = true }
+                Button("Tags to Display in Tag Inspector…") { m.showInspectorDisplaySettings = true }
+                Button("Customize Columns…") { m.showColumnSettings = true }
+                        Button("Auto Fit Columns") { m.autoFitColumns() }
                 Divider()
                 Button(m.library == nil ? "Choose Library…" : "Change Library…") { m.pick(library: true) }
                 Divider()
                 Toggle("Automatic Refresh", isOn: $m.autoRefresh).onChange(of: m.autoRefresh) { _, _ in m.configureMonitor() }
-                Menu("Action Bar Display") { actionBarDisplayPicker }
+                Menu("Action Bar Display") { actionBarDisplayPicker; Toggle("Compact Toolbar", isOn: $compactToolbar) }
+                Toggle("Show Tag Inspector", isOn: $showInspector)
                 Divider()
                 Button("Check for Updates…") { m.showUpdateCheck = true }
                 Button("License & Usage Notice…") { m.showReadTerms = true }
@@ -1005,7 +1175,8 @@ struct ContentView: View {
             } label: { Label("Settings", systemImage: "gearshape") }
         }
     }
-    var actionOrder: [Int] { [0, 1, 2, 5, 8, 7, 9, 11, 6, 10, 12, 13, 15] }
+    @AppStorage("compactToolbar", store: AppPreferences.defaults) private var compactToolbar = true
+    var actionOrder: [Int] { compactToolbar ? [1, 2, 5, 8, 6, 12, 0, 15, 7, 9, 11, 10, 13] : [1, 2, 5, 8, 7, 9, 11, 6, 10, 12, 0, 13, 15] }
     func fittedBar(_ count: Int) -> some View {
         HStack(spacing: 12) {
             Link(destination: AppRelease.website) {
@@ -1013,7 +1184,8 @@ struct ContentView: View {
             }.buttonStyle(.plain).help("Open TagCraft on GitHub")
                 .accessibilityLabel("TagCraft on GitHub")
             ForEach(Array(actionOrder.prefix(count)), id: \.self) { index in
-                barItem(index).quickHint(barHints[index])
+                if index == 8 || index == 12 { Divider().frame(height: 36).accessibilityHidden(true) }
+                barItem(index).accessibilityLabel(actionNames[index]).quickHint(barHints[index])
             }
             if count < actionOrder.count {
                 Menu {
@@ -1025,8 +1197,9 @@ struct ContentView: View {
             .buttonStyle(.plain).disabled(m.busy).fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 8).padding(.vertical, 10)
     }
+    var actionNames: [String] { ["Library Tools", "Open Workspace", "Refresh Workspace", "Play", "Stop", "Undo", "Edit ALL Tags", "Clean Filenames", "Magic", "Purge Tags", "Rename from Tags", "Get Tags from Filename", "Move to Library", "Preparation Workflows", "Filter Tracks", "Settings"] }
     var barHints: [String] {
-        ["Library tools\n" + (m.library?.path ?? "No library selected"), "Open a workspace or recent workspace", "Refresh workspace", "Play selected track", "Stop playback", "Undo last file action", "Edit selected tags", "Prepare raw filenames; does not read or change tags", "Intelligently cleans filenames, extracts tags and renames files in one reviewed plan", "Purge configured tags", "Build filenames from saved tags", "Extract tags from filenames", "Move to library\n" + (m.library?.path ?? "No library selected"), "Preparation workflows", "Filter tracks", "Settings"]
+        ["Library tools\n" + (m.library?.path ?? "No library selected"), "Open a workspace or recent workspace", "Refresh workspace", "Play selected track", "Stop playback", "Undo last file action", "Edit all supported tags in selected files, including tags hidden from Tag Inspector", "Prepare raw filenames; does not read or change tags", "Intelligently cleans filenames, extracts tags and renames files in one reviewed plan", "Purge configured tags", "Build filenames from saved tags", "Extract tags from filenames", "Move to library\n" + (m.library?.path ?? "No library selected"), "Preparation workflows", "Filter tracks", "Settings"]
     }
     var actionBar: some View {
         VStack(spacing: 0) {
@@ -1036,15 +1209,49 @@ struct ContentView: View {
                     Spacer(minLength: 0)
                     VStack(spacing: 0) {
                         BrandWaveform().frame(width: 120, height: 48)
-                        Text(AppRelease.fullLabel).font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text(AppRelease.fullLabel).font(.callout).foregroundStyle(.secondary)
                     }.fixedSize().padding(.trailing, 16)
                 }
-                fittedBar(actionOrder.count); fittedBar(12); fittedBar(10)
-                fittedBar(8); fittedBar(6); fittedBar(4); fittedBar(2); fittedBar(0)
+                fittedBar(actionOrder.count)
+                fittedBar(12); fittedBar(11); fittedBar(10); fittedBar(9)
+                fittedBar(8); fittedBar(7); fittedBar(6); fittedBar(5)
+                fittedBar(4); fittedBar(3); fittedBar(2); fittedBar(1); fittedBar(0)
             }.frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
-                .contextMenu { actionBarDisplayPicker }
+                .contextMenu { actionBarDisplayPicker; Toggle("Compact Toolbar", isOn: $compactToolbar); Toggle("Show Tag Inspector", isOn: $showInspector) }
             Divider()
         }.background(.bar).zIndex(100)
+    }
+
+    @TableColumnBuilder<Track, KeyPathComparator<Track>>
+    var workspaceColumnGroup0: some TableColumnContent<Track, KeyPathComparator<Track>> {
+        TableColumn("Filename", value: \.filename) { track in PlayingFilename(track: track, playback: m.playback) }.width(min: 100, ideal: 240, max: 1200)
+        TableColumn("Artist", value: \.artist).width(min: 60, ideal: 140, max: 900)
+        TableColumn("Title", value: \.title).width(min: 60, ideal: 160, max: 900)
+        TableColumn("Album", value: \.album).width(min: 60, ideal: 140, max: 900)
+        TableColumn("Track", value: \.trackNumber).width(min: 45, ideal: 60, max: 300)
+        TableColumn("Year", value: \.year).width(min: 45, ideal: 60, max: 300)
+        TableColumn("Status", value: \.status) { Text($0.issue == nil ? "Ready" : "Read only").foregroundStyle($0.issue == nil ? Color.secondary : Color.orange).help($0.issue ?? "") }.width(min: 60, ideal: 80, max: 500)
+        TableColumn("Album Artist", value: \.albumArtistColumn) { track in Text(track.tags.value("Album Artist").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Album Artist") }.width(min: 60, ideal: 140, max: 900)
+    }
+    @TableColumnBuilder<Track, KeyPathComparator<Track>>
+    var workspaceColumnGroup1: some TableColumnContent<Track, KeyPathComparator<Track>> {
+        TableColumn("Disc", value: \.discColumn) { track in Text(track.tags.value("Disc").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Disc") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Composer", value: \.composerColumn) { track in Text(track.tags.value("Composer").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Composer") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Conductor", value: \.conductorColumn) { track in Text(track.tags.value("Conductor").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Conductor") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("BPM", value: \.bpmColumn) { track in Text(track.tags.value("BPM").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("BPM") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Publisher", value: \.publisherColumn) { track in Text(track.tags.value("Publisher").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Publisher") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Copyright", value: \.copyrightColumn) { track in Text(track.tags.value("Copyright").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Copyright") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Encoded By", value: \.encodedByColumn) { track in Text(track.tags.value("Encoded By").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Encoded By") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Language", value: \.languageColumn) { track in Text(track.tags.value("Language").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Language") }.width(min: 60, ideal: 140, max: 900)
+    }
+    @TableColumnBuilder<Track, KeyPathComparator<Track>>
+    var workspaceColumnGroup2: some TableColumnContent<Track, KeyPathComparator<Track>> {
+        TableColumn("Grouping", value: \.groupingColumn) { track in Text(track.tags.value("Grouping").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Grouping") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Subtitle", value: \.subtitleColumn) { track in Text(track.tags.value("Subtitle").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Subtitle") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("ISRC", value: \.isrcColumn) { track in Text(track.tags.value("ISRC").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("ISRC") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Lyricist", value: \.lyricistColumn) { track in Text(track.tags.value("Lyricist").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Lyricist") }.width(min: 60, ideal: 140, max: 900)
+        TableColumn("Lyrics", value: \.lyricsColumn) { track in Text(track.tags.value("Lyrics").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Open the Tag Inspector to read or edit embedded lyrics.") }.width(min: 80, ideal: 220, max: 900)
+        TableColumn("Genre", value: \.genreColumn) { track in Text(track.tags.value("Genre").replacingOccurrences(of: "\n", with: " · ")).lineLimit(1).help("Genre") }.width(min: 60, ideal: 140, max: 900)
     }
 
     var delimiterOptions: some View {
@@ -1117,7 +1324,7 @@ struct ContentView: View {
                     showMaskBuilder = false
                 }.buttonStyle(.borderedProminent).disabled(maskError != nil)
             }
-        }.padding(24).frame(width: 760, height: 490)
+        }.padding(24).frame(minWidth: 760, idealWidth: 760, maxWidth: .infinity, minHeight: 480, idealHeight: 490, maxHeight: .infinity).background(ResizableReviewSheet())
     }
     func maskSample(_ track: Track) -> String {
         do {
@@ -1132,18 +1339,34 @@ struct ContentView: View {
             return parts.joined(separator: " • ")
         } catch { return error.localizedDescription }
     }
-    func batchField(_ name: String, _ value: Binding<String>) -> some View {
-        HStack {
-            Toggle(name, isOn: Binding(get: { m.batchFields.contains(name) }, set: { enabled in
-                if enabled { m.batchFields.insert(name) } else { m.batchFields.remove(name) }
-            })).frame(width: 120, alignment: .leading)
-            TextField(m.batchMixed.contains(name) ? "Multiple values" : name, text: Binding(get: { value.wrappedValue }, set: { value.wrappedValue = $0; m.batchMixed.remove(name) })).textFieldStyle(.roundedBorder).disabled(!m.batchFields.contains(name))
+    func tagField(_ name: String, batch: Bool) -> some View {
+        let mixed = (batch ? m.batchMixed : m.inspectorMixed).contains(name)
+        let cleared = (batch ? m.batchCleared : m.inspectorCleared).contains(name)
+        let value = Binding<String>(get: { (batch ? m.batchDraft : m.draft).value(name) }, set: { m.editTagField(name, value: $0, batch: batch) })
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Toggle(name, isOn: Binding(get: { (batch ? m.batchFields : m.inspectorFields).contains(name) }, set: { m.checkTagField(name, enabled: $0, batch: batch) }))
+                    .toggleStyle(.checkbox).frame(width: batch ? 120 : 90, alignment: .leading)
+                if name != "Lyrics" {
+                    TextField("", text: value, prompt: Text(cleared ? "Will remove" : mixed ? "Multiple values" : ""))
+                        .textFieldStyle(.roundedBorder).accessibilityLabel(name + (mixed ? ", multiple values" : ""))
+                }
+                if cleared { Text("Remove").font(.caption.bold()).foregroundStyle(.red) }
+            }
+            if name == "Lyrics" {
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: value).font(.body).frame(minHeight: 140).accessibilityLabel("Lyrics")
+                    if value.wrappedValue.isEmpty { Text(cleared ? "Will remove lyrics" : mixed ? "Multiple values" : "Lyrics").foregroundStyle(.secondary).padding(5).allowsHitTesting(false) }
+                }.overlay(RoundedRectangle(cornerRadius: 5).stroke(.secondary.opacity(0.4)))
+            }
         }
     }
+    func batchField(_ name: String, _ value: Binding<String>) -> some View { tagField(name, batch: true) }
     var batchEditor: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Edit Tags in Selected Files").font(.title2.bold())
-            Text("Check the tracks and fields to update. Checked fields replace existing values; an empty value removes that field. Other fields are preserved. Full file backups are created.").font(.callout).foregroundStyle(.secondary)
+            Text("Edit ALL Tags in Selected Files").font(.title2.bold())
+            Text(m.selectionSummary).font(.callout)
+            Text("Check the tracks and fields to update. Editing a value checks its field automatically. Untouched empty inputs are skipped. Erasing content or using Clear Selected marks tags for removal. Other fields are preserved. Full file backups are created.").font(.callout).foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading) {
                     HStack {
@@ -1170,7 +1393,8 @@ struct ContentView: View {
                 ScrollView { VStack(spacing: 12) {
                     HStack {
                         Button("Common Fields") { m.batchFields = Set(["Title", "Artist", "Album", "Album Artist", "Year", "Genre", "Track"] + Tags.extraFields.map(\.label)).subtracting(m.batchMixed) }
-                        Button("No Fields") { m.batchFields = [] }
+                        Button("No Fields") { m.batchFields = []; m.batchCleared = [] }
+                        Button("Clear Selected") { m.clearCheckedTags(batch: true) }.disabled(m.batchFields.isEmpty)
                         Spacer()
                     }
                     batchField("Title", $m.batchDraft.title)
@@ -1183,16 +1407,16 @@ struct ContentView: View {
                     ForEach(Tags.extraFields, id: \.id) { field in
                         batchField(field.label, Binding(get: { m.batchDraft.extra[field.id] ?? "" }, set: { m.batchDraft.extra[field.id] = $0.isEmpty ? nil : $0 }))
                     }
-                    Text("Common values are shown for checked tracks; differing fields show Multiple values. Checking an empty field removes it from those tracks. Common Fields checks only fields shared by checked tracks; artwork is retained unless explicitly updated; other ID3 frames are retained.").font(.caption).foregroundStyle(.secondary)
+                    Text("Common values are shown for checked tracks; differing fields show Multiple values. Untouched empty inputs never remove tags; erasing content marks a checked removal. Clear Selected marks checked fields for removal, confirmed before applying. Common Fields checks only fields shared by checked tracks; artwork is retained unless explicitly updated; other ID3 frames are retained.").font(.caption).foregroundStyle(.secondary)
                 } }
             }
             HStack {
-                Text("\(m.batchTargets.count) tracks · \(m.batchFields.count) fields").font(.caption)
+                Text("\(m.batchTargets.count) tracks\n" + m.batchPatch.summary).font(.caption).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Cancel") { m.showBatch = false }
-                Button("Apply Tags") { m.applyBatch() }.buttonStyle(.borderedProminent).disabled(m.batchTargets.isEmpty || (m.batchFields.isEmpty && !(m.batchApplyArtwork && (m.batchArtworkData != nil || m.batchRemoveArtwork))))
+                Button("Apply Tags") { m.applyBatch() }.buttonStyle(.borderedProminent).disabled(m.batchTargets.isEmpty || (m.batchPatch.effective.isEmpty && !(m.batchApplyArtwork && (m.batchArtworkData != nil || m.batchRemoveArtwork))))
             }
-        }.padding(24).frame(width: 900, height: 650)
+        }.padding(24).frame(minWidth: 900, idealWidth: 900, maxWidth: .infinity, minHeight: 480, idealHeight: 650, maxHeight: .infinity).background(ResizableReviewSheet())
             .onChange(of: m.batchTargets) { _, _ in m.refreshBatchArtwork(); m.refreshBatchValues() }
     }
     var inspector: some View {
@@ -1211,22 +1435,30 @@ struct ContentView: View {
             } else {
                 ArtworkThumbnail(summary: m.inspectorArtwork)
                 Text(m.selection.count == 1 ? m.selected.first?.filename ?? "" : "\(m.selection.count) tracks selected").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                if m.selection.count > 1 { Text("Values from the first track are shown. Only fields you change are applied to all selected files.").font(.caption).foregroundStyle(.secondary) }
-                ScrollView { Form {
-                    TextField("Title", text: $m.draft.title)
-                    TextField("Artist", text: $m.draft.artist)
-                    TextField("Album", text: $m.draft.album)
-                    TextField("Album Artist", text: $m.draft.albumArtist)
-                    TextField("Year", text: $m.draft.year)
-                    TextField("Genre", text: $m.draft.genre)
-                    TextField("Track", text: $m.draft.track)
-                    ForEach(Tags.extraFields, id: \.id) { field in
-                        TextField(field.label, text: Binding(get: { m.draft.extra[field.id] ?? "" }, set: { m.draft.extra[field.id] = $0.isEmpty ? nil : $0 }))
+                if m.selection.count > 1 { Text("Only shared values are shown. Multiple values means tags differ. Editing checks a field; empty inputs preserve existing tags.").font(.caption).foregroundStyle(.secondary) }
+                HStack {
+                    Menu("Tags") {
+                        Button("Select All Tags") { m.inspectorTracksIntent = true; m.inspectorFields = m.inspectorDisplayedFields }
+                        Button("Tags to Display…") { m.showInspectorDisplaySettings = true }
+                        Button("Select No Tags") { m.inspectorTracksIntent = true; m.inspectorFields = []; m.inspectorCleared = [] }
                     }
-                }.textFieldStyle(.roundedBorder) }
-                Button("Save Tags") { m.save() }.buttonStyle(.borderedProminent).disabled(!m.dirty).keyboardShortcut("s", modifiers: .command)
+                    Button("Clear Selected") { m.clearCheckedTags(batch: false) }.disabled(m.inspectorFields.isEmpty)
+                }
+                if !Set(TagEditPatch.fields).isSubset(of: m.inspectorDisplayedFields) {
+                    Text("Some tags are hidden. Use Edit ALL Tags to edit tags across selected files, including hidden tags, or use Purge to remove pre-defined tags.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                ScrollView { VStack(spacing: 12) {
+                    if m.inspectorDisplayedFields.isEmpty {
+                        Text("No tags are displayed. Existing tags are unchanged.").foregroundStyle(.secondary)
+                        Button("Choose Tags to Display…") { m.showInspectorDisplaySettings = true }
+                    }
+                    ForEach(TagEditPatch.fields.filter { m.inspectorDisplayedFields.contains($0) }, id: \.self) { name in tagField(name, batch: false) }
+                } }
+                if !m.inspectorPatch.summary.isEmpty { Text(m.inspectorPatch.summary).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                Button("Save Tags") { m.save() }.buttonStyle(.borderedProminent).disabled(!m.dirty)
                 Button("Discard Changes") { m.loadSelection() }.disabled(!m.dirty)
-                Text("Save tags before moving. Selecting another track discards unsaved inspector edits.").font(.caption).foregroundStyle(.secondary)
+                Text("Save tags before moving. Changing selection asks you to save or discard unsaved edits.").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
         }.padding(18)
@@ -1251,7 +1483,7 @@ struct AboutTagCraftView: View {
             Text("TagCraft Music Librarian").font(.title2.bold())
             Text("Version " + AppRelease.fullLabel)
                 .textSelection(.enabled)
-            Text("Alpha software. Test edits and moves on copies of your music files.")
+            Text(AppRelease.channel + " software. Test edits and moves on copies of your music files.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Link("TagCraft on GitHub", destination: AppRelease.website)
             Button("Done") { dismiss() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)

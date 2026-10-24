@@ -17,6 +17,7 @@ struct MagicReviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Magic — Review Suggestions").font(.title2.bold())
+            Text(m.selectionSummary).font(.callout)
             Text("Local analysis combines Clean rules, filename layouts, existing tags, library artists, folder context and batch patterns. Nothing changes until Apply. Confidence is an evidence label, not a probability.").font(.callout).foregroundStyle(.secondary)
             HStack {
                 Label("Strong evidence: changed files included by default", systemImage: "checkmark.circle").foregroundStyle(.green)
@@ -38,7 +39,7 @@ struct MagicReviewView: View {
                 Button("Apply Reviewed Changes") { m.applyMagic() }.buttonStyle(.borderedProminent)
                     .disabled(!m.magicSuggestions.contains(where: { $0.included && $0.hasChanges }))
             }
-        }.padding(24).frame(width: 950, height: 690)
+        }.padding(24).frame(minWidth: 950, idealWidth: 950, maxWidth: .infinity, minHeight: 480, idealHeight: 690, maxHeight: .infinity).background(ResizableReviewSheet())
     }
 }
 struct MagicSuggestionRow: View {

@@ -118,7 +118,9 @@ struct FileResult {
 }
 struct FileJobs {
     static func fingerprint(_ url: URL) -> (Int?, Date?) {
-        let resource = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        // URL values can carry cached metadata across an undo/redo cycle.
+        let freshURL = URL(fileURLWithPath: url.path)
+        let resource = try? freshURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         return (resource?.fileSize, resource?.contentModificationDate)
     }
     static func run(_ plans: [FilePlan], cancellation: JobCancellation, progress: @escaping (Int, Int, String) -> Void) -> [FileResult] {

@@ -14,11 +14,11 @@ This is an informational usage notice, not an additional license agreement. It d
 Continue records locally that this notice was shown for the current app version/build. Quit closes the app without recording acknowledgment, so the notice appears again next time. Neither action changes your rights under the license. Nothing is sent to a server.
 
 TAGCRAFT MUSIC LIBRARIAN — APPLICATION DETAILS
-Supplement version 1.0
+Supplement version 1.1
 
 TagCraft can edit MP3 metadata, replace or remove embedded artwork, purge selected tags, rename files and move selected files into a music library. Applying an operation can change file contents, filenames or locations. Magic proposes cleanup, tag interpretation and renaming for review; it does not apply changes without your action. Statistics, Health analysis, duplicate checks and previews do not intentionally modify music files. Applying Health corrections does write metadata.
 
-This alpha is under development. Known unresolved issues can cause audio truncation in malformed ID3 files, loss of undecodable text tags during unrelated writes, and stale metadata overwriting newer changes. These risks can affect individual files as well as batches and may not be visible in previews. Test writes on disposable copies with independent backups. TagCraft is not yet ready for writes to an original music library. Acknowledgment of this notice does not resolve those defects.
+This prerelease is under development. Known unresolved issues can cause audio truncation in malformed ID3 files, loss of undecodable text tags during unrelated writes, and stale metadata overwriting newer changes. These risks can affect individual files as well as batches and may not be visible in previews. Test writes on disposable copies with independent backups. TagCraft is not yet ready for writes to an original music library. Acknowledgment of this notice does not resolve those defects.
 
 Backups for metadata and artwork writes are stored beside source files on the same storage. Moves and renames do not create a second full copy. Undo is limited and may be unavailable or refused after files or destinations change. Cancellation does not undo already completed files. Interruptions, storage failures and other software can affect outcomes. Review the full operation scope, including selected files hidden by a filter.
 

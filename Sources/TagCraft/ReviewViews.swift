@@ -120,7 +120,7 @@ struct QualityReviewView: View {
                     m.applyQuality(filtered.filter { chosen.contains($0.id) }.map { ($0, edits[$0.id] ?? $0.suggestion ?? "") })
                 }.buttonStyle(.borderedProminent).disabled(!filtered.contains { chosen.contains($0.id) } || m.busy || m.qualityLoading)
             }
-        }.padding(24).frame(width: 880, height: 700)
+        }.padding(24).frame(minWidth: 880, idealWidth: 880, maxWidth: .infinity, minHeight: 480, idealHeight: 700, maxHeight: .infinity).background(ResizableReviewSheet())
             .onChange(of: m.qualityReason) { _, _ in chosen.removeAll(); m.reloadQualityScope() }
             .onChange(of: query) { _, _ in chosen.removeAll() }
             .onDisappear { m.qualityReloadToken = UUID() }

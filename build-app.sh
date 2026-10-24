@@ -25,5 +25,6 @@ stage_copy "$project_dir/Legal/CORE-TERMS.txt" "$bundle_dir/Contents/Resources/L
 stage_copy "$project_dir/Legal/TAGCRAFT-NOTES.txt" "$bundle_dir/Contents/Resources/Legal/TAGCRAFT-NOTES.txt"
 codesign --force --sign - "$bundle_dir"
 codesign --verify --strict "$bundle_dir"
+touch "$bundle_dir"
 
 python3 "$project_dir/Checks/release-check.py" "$bundle_dir"
